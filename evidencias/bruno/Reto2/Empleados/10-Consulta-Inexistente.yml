@@ -1,0 +1,30 @@
+info:
+  name: 10-Consulta-Inexistente
+  type: http
+  seq: 7
+
+http:
+  method: GET
+  url: "{{empleados_url}}/empleados/E999"
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("Responde 404 Not Found", function() {
+          expect(res.getStatus()).to.equal(404);
+        });
+        test("Body status 404", function() {
+          expect(res.getBody().status).to.equal(404);
+        });
+        test("Error empleado inexistente", function() {
+          expect(res.getBody().error).to.include("El empleado con id E999 no existe");
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

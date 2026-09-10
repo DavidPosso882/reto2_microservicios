@@ -1,0 +1,44 @@
+info:
+  name: 6-Depto-Inexistente
+  type: http
+  seq: 5
+
+http:
+  method: POST
+  url: "{{empleados_url}}/empleados"
+  body:
+    type: json
+    data: |-
+      {
+        "id": "E004",
+        "nombre": "Ana",
+        "apellido": "Lopez",
+        "email": "ana@empresa.com",
+        "numeroEmpleado": "EMP-2026-004",
+        "cargo": "QA",
+        "area": "Ventas",
+        "departamentoId": "NO-EXISTE",
+        "fechaIngreso": "2026-02-11"
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("Responde 400 Bad Request", function() {
+          expect(res.getStatus()).to.equal(400);
+        });
+        test("Body status 400", function() {
+          expect(res.getBody().status).to.equal(400);
+        });
+        test("Error departamento inexistente", function() {
+          expect(res.getBody().error).to.include("El departamento con id 'NO-EXISTE' no existe");
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

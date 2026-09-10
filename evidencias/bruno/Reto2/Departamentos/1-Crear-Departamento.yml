@@ -1,0 +1,38 @@
+info:
+  name: 1-Crear-Departamento
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{departamentos_url}}/departamentos"
+  body:
+    type: json
+    data: |-
+      {
+        "id": "IT",
+        "nombre": "Tecnologia",
+        "descripcion": "Departamento de TI"
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("Responde 201 Created", function() {
+          expect(res.getStatus()).to.equal(201);
+        });
+        test("Devuelve el id IT", function() {
+          expect(res.getBody().id).to.equal("IT");
+        });
+        test("Devuelve el nombre Tecnologia", function() {
+          expect(res.getBody().nombre).to.equal("Tecnologia");
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

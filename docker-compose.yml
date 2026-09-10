@@ -1,0 +1,93 @@
+services:
+  database-empleados:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_EMPLEADOS_NAME:-gestion_empleados}
+      POSTGRES_USER: ${DB_EMPLEADOS_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_EMPLEADOS_PASSWORD:-postgres}
+    volumes:
+      - vol-empleados:/var/lib/postgresql/data
+      - ./empleados/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_EMPLEADOS_USER:-postgres} -d ${DB_EMPLEADOS_NAME:-gestion_empleados}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - microservices-network
+
+  database-departamentos:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_DEPARTAMENTOS_NAME:-departamentos}
+      POSTGRES_USER: ${DB_DEPARTAMENTOS_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_DEPARTAMENTOS_PASSWORD:-postgres}
+    volumes:
+      - vol-departamentos:/var/lib/postgresql/data
+      - ./departamentos/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_DEPARTAMENTOS_USER:-postgres} -d ${DB_DEPARTAMENTOS_NAME:-departamentos}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - microservices-network
+
+  departamentos-service:
+    build: ./departamentos
+    ports:
+      - "8081:8081"
+    environment:
+      PORT: 8081
+      DB_HOST: database-departamentos
+      DB_PORT: 5432
+      DB_NAME: ${DB_DEPARTAMENTOS_NAME:-departamentos}
+      DB_USER: ${DB_DEPARTAMENTOS_USER:-postgres}
+      DB_PASSWORD: ${DB_DEPARTAMENTOS_PASSWORD:-postgres}
+    depends_on:
+      database-departamentos:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/departamentos"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - microservices-network
+
+  empleados-service:
+    build: ./empleados
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      DB_HOST: database-empleados
+      DB_PORT: 5432
+      DB_NAME: ${DB_EMPLEADOS_NAME:-gestion_empleados}
+      DB_USER: ${DB_EMPLEADOS_USER:-postgres}
+      DB_PASSWORD: ${DB_EMPLEADOS_PASSWORD:-postgres}
+      DEPARTAMENTOS_URL: http://departamentos-service:8081
+    depends_on:
+      database-empleados:
+        condition: service_healthy
+      departamentos-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/empleados"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    networks:
+      - microservices-network
+
+networks:
+  microservices-network:
+    driver: bridge
+
+volumes:
+  vol-empleados:
+  vol-departamentos:

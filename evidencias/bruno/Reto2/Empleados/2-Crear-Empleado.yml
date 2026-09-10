@@ -1,0 +1,41 @@
+info:
+  name: 2-Crear-Empleado
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{empleados_url}}/empleados"
+  body:
+    type: json
+    data: |-
+      {
+        "id": "E001",
+        "nombre": "Juan",
+        "apellido": "Perez",
+        "email": "juan.perez@empresa.com",
+        "numeroEmpleado": "EMP-2026-001",
+        "cargo": "Desarrollador Senior",
+        "area": "Tecnologia",
+        "departamentoId": "IT",
+        "fechaIngreso": "2026-02-10"
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("Responde 201 Created", function() {
+          expect(res.getStatus()).to.equal(201);
+        });
+        test("Estado ACTIVO", function() {
+          expect(res.getBody().estado).to.equal("ACTIVO");
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false
