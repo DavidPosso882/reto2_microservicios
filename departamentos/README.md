@@ -12,22 +12,7 @@ Microservicio REST para la gestión de departamentos, construido con **Node.js +
 | PostgreSQL  | 12+           |
 | Docker      | 20+           |
 
----
 
-## Variables de entorno
-
-Configuración vía variables de entorno. Copie `.env.example` a `.env` y ajuste los valores.
-
-| Variable      | Descripción                          | Valor por defecto |
-|---------------|--------------------------------------|-------------------|
-| `PORT`        | Puerto del servidor HTTP             | `8081`            |
-| `DB_HOST`     | Host de la base de datos PostgreSQL  | `localhost`       |
-| `DB_PORT`     | Puerto de PostgreSQL                 | `5432`            |
-| `DB_NAME`     | Nombre de la base de datos           | `departamentos`   |
-| `DB_USER`     | Usuario de PostgreSQL                | `postgres`        |
-| `DB_PASSWORD` | Contraseña de PostgreSQL             | `postgres`        |
-
----
 
 ## Base de datos
 
