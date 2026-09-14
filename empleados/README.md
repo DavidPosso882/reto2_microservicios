@@ -15,19 +15,6 @@ Este servicio evoluciona el Reto 1: ahora los empleados se **persisten en Postgr
 | Docker      | 20+           |
 | PostgreSQL  | 14+           |
 
----
-
-## Variables de entorno
-
-| Variable            | Default              | Descripción                                             |
-|---------------------|----------------------|---------------------------------------------------------|
-| `PORT`              | `8080`               | Puerto del servidor                                     |
-| `DB_HOST`           | `localhost`          | Host de PostgreSQL                                      |
-| `DB_PORT`           | `5432`               | Puerto de PostgreSQL                                    |
-| `DB_NAME`           | `gestion_empleados`  | Nombre de la base de datos                              |
-| `DB_USER`           | `postgres`           | Usuario de la base de datos                             |
-| `DB_PASSWORD`       | `postgres`           | Contraseña de la base de datos                          |
-| `DEPARTAMENTOS_URL` | `http://localhost:8081` | URL base del servicio de departamentos               |
 
 ---
 
