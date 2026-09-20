@@ -13,6 +13,14 @@ public enum EstadoEmpleado {
     /** Empleado vinculado y con acceso al sistema. */
     ACTIVO,
 
+    /**
+     * Registrado sin haber podido validar el departamento (fallback del
+     * Circuit Breaker, Reto 3). El empleado existe y RRHH puede trabajar con
+     * él, pero alguien debe reconciliarlo con
+     * {@code POST /empleados/{id}/revalidar} cuando departamentos vuelva.
+     */
+    PENDIENTE_VALIDACION,
+
     /** Vinculado, pero con acceso suspendido temporalmente (Reto 4 y 5). */
     EN_VACACIONES,
 

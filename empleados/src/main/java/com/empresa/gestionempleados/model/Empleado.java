@@ -1,12 +1,14 @@
 package com.empresa.gestionempleados.model;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -73,13 +75,22 @@ public class Empleado {
     @Schema(description = "Fecha de ingreso (formato YYYY-MM-DD)", example = "2026-02-10")
     private String fechaIngreso;
 
-    // En el Reto 2 solo se maneja ACTIVO; las transiciones se implementan en retos posteriores.
+    // En el Reto 3 se suma PENDIENTE_VALIDACION (fallback del Circuit Breaker).
     // Se persiste como String (EnumType.STRING) para mantener el nombre legible en la base de datos.
     @Enumerated(EnumType.STRING)
     @Column(name = "estado", nullable = false, length = 20)
     @NotNull(message = "El campo estado es obligatorio")
-    @Schema(description = "Estado del empleado (siempre ACTIVO en el Reto 2)", example = "ACTIVO")
+    @Schema(description = "Estado del empleado (ACTIVO, o PENDIENTE_VALIDACION si departamentos no respondió)", example = "ACTIVO")
     private EstadoEmpleado estado = EstadoEmpleado.ACTIVO;
+
+    // Mensaje informativo del fallback (Reto 3). No se persiste (@Transient) y
+    // solo aparece en el JSON cuando está presente (NON_NULL): los contratos
+    // del Reto 2 no cambian para ninguna respuesta normal.
+    @Transient
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Mensaje informativo, presente solo en respuestas de fallback",
+            example = "Empleado registrado. Validación de departamento pendiente.")
+    private String mensaje;
 
     public Empleado() {}
 
@@ -128,4 +139,7 @@ public class Empleado {
 
     public EstadoEmpleado getEstado() { return estado; }
     public void setEstado(EstadoEmpleado estado) { this.estado = estado; }
+
+    public String getMensaje() { return mensaje; }
+    public void setMensaje(String mensaje) { this.mensaje = mensaje; }
 }

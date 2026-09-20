@@ -1,0 +1,24 @@
+--- Petición 1 ---
+{"id":"E001","nombre":"Test","apellido":"CB","email":"cb1@empresa.com","numeroEmpleado":"EMP-CB-001","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PE
+duración: 15.345815321s
+--- Petición 2 ---
+{"id":"E002","nombre":"Test","apellido":"CB","email":"cb2@empresa.com","numeroEmpleado":"EMP-CB-002","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PE
+duración: 15.031873520s
+--- Petición 3 ---
+{"id":"E003","nombre":"Test","apellido":"CB","email":"cb3@empresa.com","numeroEmpleado":"EMP-CB-003","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PE
+duración: 15.049494731s
+--- Petición 4 ---
+{"id":"E004","nombre":"Test","apellido":"CB","email":"cb4@empresa.com","numeroEmpleado":"EMP-CB-004","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PE
+duración: 7.034979223s
+--- Petición 5 ---
+{"id":"E005","nombre":"Test","apellido":"CB","email":"cb5@empresa.com","numeroEmpleado":"EMP-CB-005","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PE
+duración: 15.040664600s
+--- Petición 6 ---
+{"id":"E006","nombre":"Test","apellido":"CB","email":"cb6@empresa.com","numeroEmpleado":"EMP-CB-006","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PE
+duración: .023923312s
+--- Petición 7 ---
+{"id":"E007","nombre":"Test","apellido":"CB","email":"cb7@empresa.com","numeroEmpleado":"EMP-CB-007","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PE
+duración: .021218302s
+--- Petición 8 ---
+{"id":"E008","nombre":"Test","apellido":"CB","email":"cb8@empresa.com","numeroEmpleado":"EMP-CB-008","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PE
+duración: .021509327s

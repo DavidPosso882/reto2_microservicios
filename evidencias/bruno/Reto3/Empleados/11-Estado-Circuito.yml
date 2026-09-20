@@ -1,0 +1,27 @@
+info:
+  name: 11-Estado-Circuito
+  type: http
+  seq: 1
+
+http:
+  method: GET
+  url: "{{gateway_url}}/empleados/circuit/state"
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("Responde 200", function() {
+          expect(res.getStatus()).to.equal(200);
+        });
+        test("Expone el circuito de departamentos", function() {
+          expect(res.getBody().nombre).to.equal("departamentos");
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

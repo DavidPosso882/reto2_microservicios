@@ -13,6 +13,6 @@ RUN npm install --omit=dev
 # Copy application source
 COPY . .
 
-EXPOSE 8081
+EXPOSE 8082
 
 CMD ["node", "src/server.js"]

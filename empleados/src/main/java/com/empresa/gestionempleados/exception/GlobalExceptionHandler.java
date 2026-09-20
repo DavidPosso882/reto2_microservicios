@@ -1,5 +1,6 @@
 package com.empresa.gestionempleados.exception;
 
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -51,12 +52,27 @@ public class GlobalExceptionHandler {
 
     /**
      * Servicio de departamentos no disponible tras agotar reintentos -> 503 JSON.
+     * En el Reto 3 el registro ya no llega aquí (degrada a PENDIENTE_VALIDACION);
+     * el caso queda para la reconciliación explícita (POST /empleados/{id}/revalidar).
      */
     @ExceptionHandler(DepartamentoNoDisponibleException.class)
     public ResponseEntity<ErrorResponse> handleDepartamentoNoDisponible(DepartamentoNoDisponibleException ex) {
         return ResponseEntity
                 .status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(new ErrorResponse(HttpStatus.SERVICE_UNAVAILABLE.value(), ex.getMessage()));
+    }
+
+    /**
+     * Circuito abierto hacia departamentos -> 503 JSON sin tocar la red.
+     * Es la prueba de que el Breaker está protegiendo al servicio: la llamada
+     * se bloqueó localmente en lugar de esperar un timeout condenado a fallar.
+     */
+    @ExceptionHandler(CallNotPermittedException.class)
+    public ResponseEntity<ErrorResponse> handleCircuitoAbierto(CallNotPermittedException ex) {
+        return ResponseEntity
+                .status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(new ErrorResponse(HttpStatus.SERVICE_UNAVAILABLE.value(),
+                        "El circuito hacia departamentos está abierto: el servicio sigue sin responder, intente más tarde"));
     }
 
     /**

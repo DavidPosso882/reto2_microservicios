@@ -16,6 +16,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -209,16 +210,54 @@ class EmpleadoControllerIT {
     }
 
     @Test
-    @DisplayName("POST /empleados con servicio de departamentos no disponible devuelve 503 JSON (Reto 2)")
-    void postDepartamentoNoDisponibleDevuelve503() throws Exception {
+    @DisplayName("POST /empleados con departamentos caído devuelve 201 con PENDIENTE_VALIDACION (fallback Reto 3)")
+    void postDepartamentoNoDisponibleDevuelve201ConPendiente() throws Exception {
         when(departamentoClient.validar(anyString())).thenThrow(new DepartamentoNoDisponibleException());
 
         mockMvc.perform(post("/empleados")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(EMPLEADO_VALIDO))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.status").value(503))
-                .andExpect(jsonPath("$.error").value("El servicio de departamentos no está disponible en este momento, intente más tarde"));
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.estado").value("PENDIENTE_VALIDACION"))
+                .andExpect(jsonPath("$.mensaje").value("Empleado registrado. Validación de departamento pendiente."));
+    }
+
+    @Test
+    @DisplayName("GET /empleados/circuit/state expone el estado del circuito (Reto 3)")
+    void getCircuitStateExponeEstado() throws Exception {
+        mockMvc.perform(get("/empleados/circuit/state"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nombre").value("departamentos"))
+                .andExpect(jsonPath("$.estado").value("CLOSED"));
+    }
+
+    @Test
+    @DisplayName("POST /empleados/{id}/revalidar reconcilia un pendiente a ACTIVO (Reto 3)")
+    void postRevalidarReconciliaPendiente() throws Exception {
+        when(departamentoClient.validar(anyString())).thenThrow(new DepartamentoNoDisponibleException());
+
+        mockMvc.perform(post("/empleados")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(EMPLEADO_VALIDO))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.estado").value("PENDIENTE_VALIDACION"));
+
+        // doReturn en lugar de when().thenReturn: el stub anterior es thenThrow y
+        // re-stubear con when() ejecutaría ese stub durante el stubbing y escaparía la excepción.
+        doReturn(true).when(departamentoClient).validar(anyString());
+
+        mockMvc.perform(post("/empleados/E001/revalidar"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estado").value("ACTIVO"));
+    }
+
+    @Test
+    @DisplayName("POST /empleados/{id}/revalidar con id inexistente devuelve 404 (Reto 3)")
+    void postRevalidarInexistenteDevuelve404() throws Exception {
+        mockMvc.perform(post("/empleados/E999/revalidar"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.error").value("El empleado con id E999 no existe"));
     }
 
     @Test

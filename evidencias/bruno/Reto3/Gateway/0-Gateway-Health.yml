@@ -1,0 +1,27 @@
+info:
+  name: 0-Gateway-Health
+  type: http
+  seq: 1
+
+http:
+  method: GET
+  url: "{{gateway_url}}/health"
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("Responde 200", function() {
+          expect(res.getStatus()).to.equal(200);
+        });
+        test("Es el gateway", function() {
+          expect(res.getBody().service).to.equal("api-gateway");
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

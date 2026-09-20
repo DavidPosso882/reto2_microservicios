@@ -37,10 +37,10 @@ services:
 
   departamentos-service:
     build: ./departamentos
-    ports:
-      - "8081:8081"
+    expose:
+      - "8082"   # visible solo dentro de la red de Docker (Reto 3: borde único)
     environment:
-      PORT: 8081
+      PORT: 8082
       DB_HOST: database-departamentos
       DB_PORT: 5432
       DB_NAME: ${DB_DEPARTAMENTOS_NAME:-departamentos}
@@ -50,7 +50,7 @@ services:
       database-departamentos:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8081/departamentos"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8082/departamentos"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -60,27 +60,50 @@ services:
 
   empleados-service:
     build: ./empleados
-    ports:
-      - "8080:8080"
+    expose:
+      - "8081"   # visible solo dentro de la red de Docker (Reto 3: borde único)
     environment:
-      PORT: 8080
+      PORT: 8081
       DB_HOST: database-empleados
       DB_PORT: 5432
       DB_NAME: ${DB_EMPLEADOS_NAME:-gestion_empleados}
       DB_USER: ${DB_EMPLEADOS_USER:-postgres}
       DB_PASSWORD: ${DB_EMPLEADOS_PASSWORD:-postgres}
-      DEPARTAMENTOS_URL: http://departamentos-service:8081
+      DEPARTAMENTOS_URL: http://departamentos-service:8082
     depends_on:
       database-empleados:
         condition: service_healthy
       departamentos-service:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/empleados"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/empleados"]
       interval: 10s
       timeout: 3s
       retries: 5
       start_period: 30s
+    networks:
+      - microservices-network
+
+  # ── Borde del sistema (Reto 3): único servicio con puertos al host ──
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - "8080:8080"   # ← el ÚNICO puerto publicado al host
+    environment:
+      PORT: 8080
+      EMPLEADOS_URL: http://empleados-service:8081
+      DEPARTAMENTOS_URL: http://departamentos-service:8082
+    depends_on:
+      empleados-service:
+        condition: service_started
+      departamentos-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
     networks:
       - microservices-network
 

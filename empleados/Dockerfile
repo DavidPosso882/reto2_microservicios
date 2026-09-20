@@ -25,7 +25,7 @@ RUN apt-get update \
 COPY --from=build /app/target/gestion-empleados-1.0.0.jar app.jar
 
 # Exponer el puerto en el que corre el servidor
-EXPOSE 8080
+EXPOSE 8081
 
 # Comando de arranque
 ENTRYPOINT ["java", "-jar", "app.jar"]

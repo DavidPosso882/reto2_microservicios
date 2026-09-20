@@ -38,3 +38,5 @@ target/
 # Archivos de sistema operativo
 .DS_Store
 Thumbs.db
+# Local Pi runtime state
+.atl/

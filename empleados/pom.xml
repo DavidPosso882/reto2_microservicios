@@ -64,6 +64,16 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- Circuit Breaker empleados -> departamentos (Reto 3). Uso programático
+             (sin starter ni AOP): el servicio crea su instancia con la fábrica
+             DepartamentoCircuitBreaker, así el constructor no cambia y los tests
+             existentes siguen compilando. -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-circuitbreaker</artifactId>
+            <version>2.2.0</version>
+        </dependency>
     </dependencies>
 
     <build>

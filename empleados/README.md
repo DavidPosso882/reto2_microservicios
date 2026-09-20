@@ -21,13 +21,13 @@ Este servicio evoluciona el Reto 1: ahora los empleados se **persisten en Postgr
 
 | Variable            | Default              | Descripción                                             |
 |---------------------|----------------------|---------------------------------------------------------|
-| `PORT`              | `8080`               | Puerto del servidor                                     |
+| `PORT`              | `8081`               | Puerto del servidor                                     |
 | `DB_HOST`           | `localhost`          | Host de PostgreSQL                                      |
 | `DB_PORT`           | `5432`               | Puerto de PostgreSQL                                    |
 | `DB_NAME`           | `gestion_empleados`  | Nombre de la base de datos                              |
 | `DB_USER`           | `postgres`           | Usuario de la base de datos                             |
 | `DB_PASSWORD`       | `postgres`           | Contraseña de la base de datos                          |
-| `DEPARTAMENTOS_URL` | `http://localhost:8081` | URL base del servicio de departamentos               |
+| `DEPARTAMENTOS_URL` | `http://localhost:8082` | URL base del servicio de departamentos               |
 
 ---
 
@@ -55,7 +55,7 @@ El esquema se gestiona con `init.sql` (`spring.jpa.hibernate.ddl-auto=none`); Hi
 mvn spring-boot:run
 ```
 
-El servidor queda disponible en `http://localhost:8080`.
+El servidor queda disponible en `http://localhost:8081`.
 
 ---
 
@@ -66,13 +66,13 @@ El servidor queda disponible en `http://localhost:8080`.
 docker build -t servidor-empleados .
 
 # 2. Ejecutar el contenedor (ajusta las variables de entorno)
-docker run -p 8080:8080 \
+docker run -p 8081:8081 \
   -e DB_HOST=host.docker.internal \
   -e DB_PORT=5432 \
   -e DB_NAME=gestion_empleados \
   -e DB_USER=postgres \
   -e DB_PASSWORD=postgres \
-  -e DEPARTAMENTOS_URL=http://host.docker.internal:8081 \
+  -e DEPARTAMENTOS_URL=http://host.docker.internal:8082 \
   servidor-empleados
 ```
 
@@ -85,7 +85,7 @@ docker run -p 8080:8080 \
 La documentación interactiva (OpenAPI 3) está disponible en:
 
 ```
-http://localhost:8080/swagger-ui.html
+http://localhost:8081/swagger-ui.html
 ```
 
 Incluye descripciones, códigos de respuesta y esquemas de las operaciones.
@@ -111,7 +111,7 @@ Los tests usan **H2 en memoria** (sin PostgreSQL) y **stubean la llamada al serv
 
 **Request**
 ```http
-POST http://localhost:8080/empleados
+POST http://localhost:8081/empleados
 Content-Type: application/json
 
 {
@@ -160,10 +160,11 @@ y **3 reintentos** con backoff 1s → 2s → 4s.
   ```json
   { "status": 400, "error": "El departamento con id 'IT' no existe" }
   ```
-- Si el servicio de departamentos no responde tras agotar los reintentos → `503` y se **rechaza** la operación (nunca se acepta como pendiente):
+- Si el servicio de departamentos no responde tras agotar los reintentos → `201` con **fallback** (Reto 3, Circuit Breaker): el empleado se acepta con `estado: PENDIENTE_VALIDACION` y mensaje informativo, para reconciliarlo luego con `POST /empleados/{id}/revalidar`:
   ```json
-  { "status": 503, "error": "El servicio de departamentos no está disponible en este momento, intente más tarde" }
+  { "id": "E001", "estado": "PENDIENTE_VALIDACION", "mensaje": "Empleado registrado. Validación de departamento pendiente.", "...": "..." }
   ```
+  El `503` queda reservado para la reconciliación explícita (`POST /empleados/{id}/revalidar` con departamentos caído o circuito abierto) y ya no rechaza el registro.
 
 **Nota:** el campo `fechaIngreso` debe tener formato `YYYY-MM-DD`; si no, el servidor responde `400 Bad Request`.
 
@@ -173,7 +174,7 @@ y **3 reintentos** con backoff 1s → 2s → 4s.
 
 **Request**
 ```http
-GET http://localhost:8080/empleados
+GET http://localhost:8081/empleados
 ```
 
 **Respuesta — 200 OK** (array JSON, puede estar vacío)
@@ -190,7 +191,7 @@ GET http://localhost:8080/empleados
 
 **Request**
 ```http
-GET http://localhost:8080/empleados/E001
+GET http://localhost:8081/empleados/E001
 ```
 
 **Respuesta exitosa — 200 OK**
@@ -228,7 +229,7 @@ Cualquier otra ruta o método retorna:
 
 ```bash
 # Registrar un empleado (espera 201 Created)
-curl -X POST http://localhost:8080/empleados \
+curl -X POST http://localhost:8081/empleados \
   -H "Content-Type: application/json" \
   -d '{
     "id": "E001",
@@ -243,19 +244,19 @@ curl -X POST http://localhost:8080/empleados \
   }'
 
 # Listar empleados
-curl http://localhost:8080/empleados
+curl http://localhost:8081/empleados
 
 # Consultar un empleado
-curl http://localhost:8080/empleados/E001
+curl http://localhost:8081/empleados/E001
 
 # Empleado no existe (espera 404)
-curl http://localhost:8080/empleados/E999
+curl http://localhost:8081/empleados/E999
 
 # Ruta no definida (espera 404)
-curl http://localhost:8080/otra-ruta
+curl http://localhost:8081/otra-ruta
 
 # Swagger UI
-open http://localhost:8080/swagger-ui.html
+open http://localhost:8081/swagger-ui.html
 ```
 
 ---

@@ -169,18 +169,15 @@ class EmpleadoServiceTest {
     }
 
     @Test
-    @DisplayName("registrar con servicio de departamentos no disponible lanza DepartamentoNoDisponibleException")
-    void registrarDepartamentoNoDisponibleLanzaDepartamentoNoDisponible() {
+    @DisplayName("registrar con departamentos no disponible acepta con PENDIENTE_VALIDACION (fallback Reto 3)")
+    void registrarDepartamentoNoDisponibleAceptaConPendienteValidacion() {
         when(departamentoClient.validar(anyString())).thenThrow(new DepartamentoNoDisponibleException());
 
-        Empleado empleado = empleadoValido("E001", "juan.perez@empresa.com", "EMP-2026-001");
+        Empleado registrado = service.registrar(empleadoValido("E001", "juan.perez@empresa.com", "EMP-2026-001"));
 
-        assertThrows(
-                DepartamentoNoDisponibleException.class,
-                () -> service.registrar(empleado),
-                "Debe rechazarse el registro si el servicio de departamentos no está disponible"
-        );
-        assertEquals(0, repository.count(), "No debe persistirse nada si el servicio no está disponible");
+        assertEquals(EstadoEmpleado.PENDIENTE_VALIDACION, registrado.getEstado(),
+                "Sin departamentos, el registro debe degradar a PENDIENTE_VALIDACION en lugar de rechazarse");
+        assertEquals(1, repository.count(), "El fallback persiste el empleado para reconciliarlo luego");
     }
 
     @Test
