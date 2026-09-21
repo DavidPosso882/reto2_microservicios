@@ -40,3 +40,8 @@ target/
 Thumbs.db
 # Local Pi runtime state
 .atl/
+.pi/
+__pycache__/
+*.pyc
+.pytest_cache/
+evidencias/reto4/compose-logs-*.log

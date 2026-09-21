@@ -220,3 +220,222 @@ PostgreSQL 16 en ambos servicios (una BD por servicio, sin accesos cruzados);
 esquema vía `init.sql` (`ddl-auto=none`); unicidad con pre-validación + `UNIQUE`
 en BD; timeout 2 s + 3 reintentos con backoff 1 s → 2 s → 4 s hacia
 departamentos (el Breaker los envuelve, no los reemplaza).
+
+---
+
+# Reto 4 — Comunicación Asincrónica y Eventos
+
+Evolución del Reto 3: se agrega **RabbitMQ** como message broker y tres servicios
+nuevos — **perfiles** (Go), **notificaciones** (Python) y **vacaciones** (Ruby) —
+que se integran al ecosistema por **eventos**, no por llamadas REST. Empleados pasa
+a publicar eventos y vacaciones valida la existencia del empleado contra una
+**réplica local** alimentada por eventos. El gateway suma las rutas
+`/perfiles`, `/notificaciones` y `/vacaciones`; la URL base única sigue siendo
+`http://localhost:8080`.
+
+Contrato normativo de eventos: **`CATALOGO_EVENTOS.md`** (envelope, payloads,
+exchange, colas y deduplicación).
+
+## 8. Broker: RabbitMQ
+
+Se eligió **RabbitMQ** (`rabbitmq:3-management`) sobre Kafka, Redis Streams y NATS:
+
+- **Fan-out con exchanges topic**: cada consumer declara su propia cola durable y la
+  enlaza solo a las routing keys que le interesan; el fan-out sale gratis sin
+  repetir lógica de despacho (con Kafka cada consumer gestionaría offsets y con
+  NATS sería at-least-once puro sin cola durable por servicio).
+- **Management UI incluida** (`http://localhost:15672`): ver colas, consumers,
+  mensajes en vuelo y publicar manualmente fue clave para depurar y para la
+  evidencia de deduplicación.
+- **Peso operativo**: un solo contenedor, sin zookeeper/cluster; adecuado para un
+  ecosistema de 5 servicios con volúmenes de mensaje modestos.
+- **Ejemplo del enunciado**: la consigna orienta hacia RabbitMQ, y nada del
+  dominio (eventos de dominio simples, no streams de alta tasa) pide algo más.
+
+| Puerto | Uso | Publicación |
+|---|---|---|
+| 5672 | AMQP (productores/consumidores) | al host (para pruebas manuales) |
+| 15672 | Management UI | al host |
+
+Las credenciales se configuran por variables de entorno (`RABBITMQ_USER` /
+`RABBITMQ_PASSWORD` en `.env`; el servicio declara `RABBITMQ_DEFAULT_USER/PASS` y
+todos los servicios cliente reciben las mismas por `environment`).
+
+## 9. Arquitectura: servicio ↔ lenguaje ↔ puerto
+
+| Servicio | Lenguaje | Puerto interno | Puerto host |
+|---|---|---|---|
+| api-gateway | Node.js 22 + Express 4 + http-proxy-middleware 3 | 8080 | **8080 (el único)** |
+| empleados-service | Java 21 + Spring Boot 3.2.5 | 8081 | ninguno (`expose`) |
+| departamentos-service | Node.js 22 + Express 4 | 8082 | ninguno (`expose`) |
+| perfiles-service | **Go 1.26** (stdlib `net/http` + amqp091-go) — nuevo | 8083 | ninguno (`expose`) |
+| notificaciones-service | **Python 3.12** (FastAPI + SQLAlchemy + pika) — nuevo | 8084 | ninguno (`expose`) |
+| vacaciones-service | **Ruby 3.3** (Sinatra + bunny) — nuevo | 8085 | ninguno (`expose`) |
+| message-broker | RabbitMQ 3-management (infraestructura) | 5672 / 15672 | 5672 y 15672 |
+
+Cinco lenguajes efectivos de negocio: **Java, Node.js, Python, Go y Ruby**.
+Se mantiene la política del Reto 3: todos los servicios de negocio usan
+`expose:` (visibles solo dentro de `microservices-network`); solo el gateway
+publica `ports:` al host en 8080 (y el broker, que es infraestructura de
+observabilidad, en 5672/15672). Cada servicio nuevo tiene su **BD Postgres 16
+propia** (`database-perfiles`, `database-notificaciones`, `database-vacaciones`),
+sin accesos cruzados.
+
+## 10. Despliegue
+
+```bash
+cp .env.example .env   # ajustar passwords si se desea (nunca commitear el .env real)
+docker compose up --build -d
+```
+
+Verificación (evidencia completa: `evidencias/reto4/flujo-e2e.log`, run final
+con **12/12 contenedores healthy**):
+
+```bash
+docker compose ps                          # 12 contenedores Up (healthy)
+# Management UI: http://localhost:15672 (admin / valor de RABBITMQ_PASSWORD)
+# Queues: q.perfiles, q.notificaciones, q.vacaciones.empleados (1 consumer cada una)
+curl http://localhost:8080/health          # {"status":"ok","service":"api-gateway"}
+```
+
+## 11. Eventos del ecosistema
+
+Exchange topic durable **`ecosistema.eventos`**, routing key = `type` del evento,
+cola durable por servicio consumer, ACK manual después de persistir y
+**deduplicación por `id` del envelope** (tabla `eventos_procesados(id PK)`).
+Detalles y payloads exactos: `CATALOGO_EVENTOS.md`.
+
+| Evento (`type`) | Productor | Consumidores (cola) | Efecto |
+|---|---|---|---|
+| `empleado.creado` | empleados | notificaciones (`q.notificaciones`), perfiles (`q.perfiles`), vacaciones (`q.vacaciones.empleados`) | BIENVENIDA · perfil por defecto · alta en réplica local |
+| `empleado.actualizado` | empleados | perfiles (`q.perfiles`) | sincroniza nombre/apellido/email (nunca pisa contacto propio) |
+| `empleado.retirado` | empleados | notificaciones, perfiles, vacaciones | DESVINCULACIÓN · `archivado=true` (jamás borra) · baja en réplica local |
+| `vacaciones.programadas` | vacaciones | notificaciones (`q.notificaciones`) | notificación `VACACIONES` (incluye `empleadoEmail` desnormalizado) |
+
+El envelope común lleva `id` (UUID v4, **clave de dedup**), `type`, `version`,
+`occurredAt`, `producer` y `data` (foto completa del empleado; los consumers son
+idempotentes y no dependen del orden).
+
+## 12. Decisión validación-4: réplica local por eventos (opción b)
+
+Vacaciones valida la existencia y el estado del empleado contra una **réplica
+local** (`empleados_locales`) alimentada por los eventos
+`empleado.creado` / `empleado.retirado`, en lugar de consultar REST a
+empleados-service.
+
+- **Por qué**: autonomía total (cero llamadas REST salientes en el camino de
+  validación), disponibilidad si empleados cae (el flujo de vacaciones no se
+  degrada) y coherencia con el espíritu async del reto: si todo se resuelve por
+  REST, la mensajería queda cosmética.
+- **Costo aceptado**: **consistencia eventual** — la réplica solo sabe lo que
+  llegó por eventos. Si se programa vacaciones para un empleado cuyo evento
+  todavía no llegó, responde `400 "no existe en la réplica local (aún no llegó
+  el evento empleado.creado)"`.
+- **Consecuencia observada**: por semántica pub/sub, los eventos publicados
+  **antes** de que una cola exista/enlace se pierden para ese consumer (no hay
+  replay). Se manifestó en el flujo e2e (evento de E001 perdido por race de
+  topología al arranque, `flujo-e2e.log` paso 3c). Para vaciar el sistema:
+  recrear volúmenes (`docker compose down -v`) o republicar manualmente vía
+  Management API.
+
+## 13. Evidencia de deduplicación
+
+`evidencias/reto4/dedup.log`: se publicó **dos veces el mismo envelope** (mismo
+`id` `22222222-…`, evento `empleado.creado` de `EDEDUP`) vía Management API.
+Resultado esperado y observado: `{"routed":true}` en ambos publishes, **1 solo
+perfil** en `GET /perfiles/EDEDUP` (200, sin duplicados), **1 sola BIENVENIDA**
+en `GET /notificaciones/EDEDUP` y **1 fila** en `eventos_procesados` por
+servicio consumer. El segundo mensaje se ACKea sin efecto.
+
+Reproducción vía Management API (publicar el MISMO payload dos veces):
+
+```bash
+BODY='{"properties":{"content_type":"application/json"},"routing_key":"empleado.creado","payload":{"id":"22222222-2222-4222-8222-222222222222","type":"empleado.creado","version":"1.0","occurredAt":"2026-09-21T17:34:00Z","producer":"empleados-service","data":{"id":"EDEDUP","nombre":"Dedup","apellido":"Test","email":"dedup.test@empresa.com","numeroEmpleado":"NUM-DUP","cargo":"QA","area":"IT","departamentoId":"IT","fechaIngreso":"2026-04-01","estado":"ACTIVO"}},"payload_encoding":"string"}'
+
+curl -u admin:$RABBITMQ_PASSWORD -X POST \
+  http://localhost:15672/api/exchanges/%2F/ecosistema.eventos/publish \
+  -H 'Content-Type: application/json' \
+  -d "$BODY"
+# → {"routed":true}  — repetir idéntico y verificar 1 perfil / 1 BIENVENIDA / 1 fila de dedup
+```
+
+## 14. Cómo probar el flujo (todo por el gateway :8080)
+
+Secuencia mínima (evidencia completa con salidas reales:
+`evidencias/reto4/flujo-e2e.log`):
+
+```bash
+# 1. Departamento                          → 201 (400 si ya existe)
+curl -X POST http://localhost:8080/departamentos -H 'Content-Type: application/json' \
+  -d '{"id":"IT","nombre":"Tecnologia","descripcion":"Departamento de TI"}'
+
+# 2. Empleado (dispara empleado.creado)    → 201 estado ACTIVO
+curl -X POST http://localhost:8080/empleados -H 'Content-Type: application/json' \
+  -d '{"id":"E100","nombre":"Juan","apellido":"Perez","email":"juan.perez@empresa.com",
+  "numeroEmpleado":"NUM-100","cargo":"Developer","area":"IT","departamentoId":"IT",
+  "fechaIngreso":"2026-03-01"}'
+
+# 3. Esperar el consumo async (~15 s, backoff de topología al arranque)
+sleep 15
+
+# 4. Perfil creado por evento              → 200 (perfil por defecto)
+curl http://localhost:8080/perfiles/E100
+# 5. Notificación de bienvenida            → 200 (1 BIENVENIDA)
+curl http://localhost:8080/notificaciones/E100
+# 6. Actualizar contacto propio del perfil → 200 (ignora campos de identidad)
+curl -X PUT http://localhost:8080/perfiles/E100 -H 'Content-Type: application/json' \
+  -d '{"telefono":"+54-11-5555-1234","ciudad":"Buenos Aires","biografia":"Backend dev"}'
+
+# 7. Vacaciones (valida contra la réplica local; dispara vacaciones.programadas)
+curl -X POST http://localhost:8080/vacaciones -H 'Content-Type: application/json' \
+  -d '{"empleadoId":"E100","fechaInicio":"2026-12-15","fechaFin":"2026-12-30"}'   # → 201 V-AAAA-NNNN
+curl http://localhost:8080/notificaciones/E100                                   # ahora también 1 VACACIONES
+
+# 8. Validaciones 400 de vacaciones
+curl -X POST http://localhost:8080/vacaciones -H 'Content-Type: application/json' \
+  -d '{"empleadoId":"E100","fechaInicio":"2027-01-10","fechaFin":"2027-01-05"}'   # → 400 fechas incoherentes
+curl -X POST http://localhost:8080/vacaciones -H 'Content-Type: application/json' \
+  -d '{"empleadoId":"E100","fechaInicio":"2026-12-20","fechaFin":"2027-01-05"}'   # → 400 con clave "conflicto"
+curl -X POST http://localhost:8080/vacaciones -H 'Content-Type: application/json' \
+  -d '{"empleadoId":"E999","fechaInicio":"2027-01-10","fechaFin":"2027-01-20"}'   # → 400 no está en la réplica local
+
+# 9. Retiro (baja lógica; dispara empleado.retirado) → 200 estado RETIRADO + fechaRetiro
+curl -X DELETE http://localhost:8080/empleados/E100
+curl 'http://localhost:8080/empleados?estado=RETIRADO'                            # → 200 lo lista
+curl http://localhost:8080/notificaciones/E100                                    # + DESVINCULACION
+curl http://localhost:8080/perfiles/E100                                          # archivado=true
+curl 'http://localhost:8080/vacaciones?empleadoId=E100'                           # períodos conservados para auditoría
+
+# 10. Auditoría de dedup (ledger por servicio, 1 fila por evento único)
+docker compose exec database-perfiles psql -U postgres -d perfiles \
+  -c 'SELECT * FROM eventos_procesados'
+docker compose exec database-vacaciones psql -U postgres -d vacaciones \
+  -c 'SELECT * FROM empleados_locales'   # réplica local
+```
+
+## 15. Tests por servicio
+
+Todos corren **sin broker ni Postgres reales** (fakes en memoria):
+
+| Servicio | Comando | Resultado |
+|---|---|---|
+| empleados | `cd empleados && mvn test` | **72 tests** (38 del Reto 3 + nuevos de eventos/PUT/DELETE/filtros) |
+| api-gateway | `cd api-gateway && npm test` | **13 tests** (7 del Reto 3 + 3 rutas nuevas y propagación) |
+| departamentos | `cd departamentos && npm test` | sin cambios de código en este reto |
+| perfiles | `cd perfiles && go test ./...` | **22 tests** |
+| notificaciones | `cd notificaciones && python -m pytest tests -v` | **30 tests** |
+| vacaciones | `cd vacaciones && ruby tests/validaciones_test.rb && ruby tests/endpoints_test.rb && ruby tests/consumer_publisher_test.rb` | **29 tests** |
+
+## 16. Estructura del repo (novedades del Reto 4)
+
+```
+.
+├── CATALOGO_EVENTOS.md         # contrato normativo de eventos (envelope, colas, dedup)
+├── docker-compose.yml          # + message-broker (RabbitMQ), 3 servicios y 3 BD nuevas
+├── notificaciones/             # Python FastAPI + pika: consumer reactivo, solo lectura
+├── perfiles/                   # Go stdlib: consumer + REST de perfiles
+├── vacaciones/                 # Ruby Sinatra: CRUD + réplica local + publish
+├── empleados/                  # + publish de 3 eventos, PUT/DELETE, filtros
+├── api-gateway/                # + rutas /perfiles /notificaciones /vacaciones
+└── evidencias/reto4/           # flujo-e2e.log, dedup.log, informe de re-verificación
+```

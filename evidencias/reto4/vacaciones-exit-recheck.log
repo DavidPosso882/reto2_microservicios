@@ -1,0 +1,13 @@
+vacaciones-service-1  | NOTICE:  relation "vacaciones" already exists, skipping
+vacaciones-service-1  | NOTICE:  relation "idx_vacaciones_empleado" already exists, skipping
+vacaciones-service-1  | NOTICE:  relation "empleados_locales" already exists, skipping
+vacaciones-service-1  | NOTICE:  relation "eventos_procesados" already exists, skipping
+vacaciones-service-1  | app.rb:119:in `block in build': undefined method `set' for class Vacaciones::Boot (NoMethodError)
+vacaciones-service-1  | 
+vacaciones-service-1  |         set :config, config
+vacaciones-service-1  |         ^^^
+vacaciones-service-1  | Did you mean?  send
+vacaciones-service-1  | 	from /usr/local/bundle/gems/sinatra-4.2.1/lib/sinatra/base.rb:1582:in `configure'
+vacaciones-service-1  | 	from app.rb:118:in `build'
+vacaciones-service-1  | 	from app.rb:128:in `run!'
+vacaciones-service-1  | 	from app.rb:138:in `<main>'

@@ -1,6 +1,7 @@
 package com.empresa.gestionempleados.controller;
 
 import com.empresa.gestionempleados.model.Empleado;
+import com.empresa.gestionempleados.model.EstadoEmpleado;
 import com.empresa.gestionempleados.service.EmpleadoService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -17,10 +18,12 @@ import java.util.Map;
 /**
  * Controlador REST para la gestión de empleados.
  *
- * Endpoints expuestos (Reto 3: se suma observabilidad del circuito y reconciliación):
+ * Endpoints expuestos (Reto 4: se suman actualización, baja lógica y filtros):
  *   POST /empleados       -> registrar un empleado (201 Created)
- *   GET  /empleados       -> listar todos los empleados (200)
+ *   GET  /empleados       -> listar empleados, con filtros opcionales estado/desde/hasta (200)
  *   GET  /empleados/{id}  -> consultar un empleado por id (200 / 404)
+ *   PUT  /empleados/{id}  -> actualizar campos del empleado (200 / 400 / 404)
+ *   DELETE /empleados/{id} -> baja lógica: estado RETIRADO + fechaRetiro (200 / 404)
  *   GET  /empleados/circuit/state -> estado observable del Circuit Breaker (200)
  *   POST /empleados/{id}/revalidar -> reconciliar un PENDIENTE_VALIDACION (200 / 400 / 404 / 503)
  */
@@ -57,18 +60,28 @@ public class EmpleadoController {
     }
 
     /**
-     * Lista todos los empleados registrados.
+     * Lista empleados, opcionalmente filtrados (Reto 4).
      *
      * GET /empleados
-     * Respuesta 200 OK: array JSON con los empleados (vacío si no hay ninguno)
+     * Params opcionales:
+     *   estado -> filtra por igualdad exacta (ACTIVO, PENDIENTE_VALIDACION, EN_VACACIONES, RETIRADO)
+     *   desde / hasta -> con estado=RETIRADO, rango inclusivo YYYY-MM-DD sobre fechaRetiro
+     * Sin params devuelve todos los empleados (contrato del Reto 2 intacto).
+     * Respuesta 200 OK: array JSON con los empleados que cumplen el filtro.
      */
     @GetMapping
-    @Operation(summary = "Listar empleados", description = "Devuelve todos los empleados registrados como un array JSON.")
+    @Operation(summary = "Listar empleados",
+            description = "Devuelve los empleados como un array JSON. Sin filtros devuelve todos; "
+                    + "con estado filtra por igualdad exacta; con estado=RETIRADO acepta además "
+                    + "desde y hasta (YYYY-MM-DD) para filtrar por rango inclusivo de fechaRetiro.")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Lista de empleados (puede estar vacía)")
+            @ApiResponse(responseCode = "200", description = "Lista de empleados (puede estar vacía)"),
+            @ApiResponse(responseCode = "400", description = "Estado desconocido o formato de fecha inválido")
     })
-    public List<Empleado> listar() {
-        return service.listarTodos();
+    public List<Empleado> listar(@RequestParam(required = false) EstadoEmpleado estado,
+                                 @RequestParam(required = false) String desde,
+                                 @RequestParam(required = false) String hasta) {
+        return service.listarConFiltros(estado, desde, hasta);
     }
 
     /**
@@ -105,6 +118,53 @@ public class EmpleadoController {
     })
     public Map<String, Object> estadoCircuito() {
         return service.estadoCircuito();
+    }
+
+    /**
+     * Actualiza los campos editables de un empleado (Reto 4).
+     *
+     * PUT /empleados/{id}
+     * Body: JSON parcial con los campos a modificar (los null se ignoran).
+     * Respuesta 200 OK: empleado actualizado
+     * Respuesta 400 Bad Request: email duplicado o departamento inexistente
+     * Respuesta 404 Not Found: empleado no existe
+     * Respuesta 503 Service Unavailable: departamentos no disponible
+     */
+    @PutMapping("/{id}")
+    @Operation(summary = "Actualizar un empleado",
+            description = "Actualiza nombre, apellido, email, cargo, area, departamentoId y fechaIngreso; "
+                    + "los campos null se ignoran. Si el email o el departamento cambian se revalidan. "
+                    + "Publica el evento empleado.actualizado con la foto completa.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Empleado actualizado"),
+            @ApiResponse(responseCode = "400", description = "Email duplicado o departamento inexistente"),
+            @ApiResponse(responseCode = "404", description = "Empleado no encontrado"),
+            @ApiResponse(responseCode = "503", description = "Departamentos no disponible o circuito abierto")
+    })
+    public ResponseEntity<Empleado> actualizar(@PathVariable String id,
+                                               @RequestBody Empleado datos) {
+        return ResponseEntity.ok(service.actualizar(id, datos));
+    }
+
+    /**
+     * Baja lógica de un empleado (Reto 4): el registro pasa a RETIRADO con
+     * fechaRetiro y se conserva para auditoría; nunca se borra.
+     *
+     * DELETE /empleados/{id}
+     * Respuesta 200 OK: empleado retirado (idempotente: si ya estaba RETIRADO
+     * se devuelve tal cual)
+     * Respuesta 404 Not Found: empleado no existe
+     */
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Retirar un empleado (baja lógica)",
+            description = "Marca el empleado como RETIRADO con fechaRetiro en ISO-8601 UTC y publica "
+                    + "el evento empleado.retirado. Idempotente si ya está retirado.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Empleado retirado"),
+            @ApiResponse(responseCode = "404", description = "Empleado no encontrado")
+    })
+    public ResponseEntity<Empleado> retirar(@PathVariable String id) {
+        return ResponseEntity.ok(service.retirar(id));
     }
 
     /**

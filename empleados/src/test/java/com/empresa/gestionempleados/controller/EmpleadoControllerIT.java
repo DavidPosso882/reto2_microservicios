@@ -1,6 +1,7 @@
 package com.empresa.gestionempleados.controller;
 
 import com.empresa.gestionempleados.client.DepartamentoClient;
+import com.empresa.gestionempleados.events.EventPublisher;
 import com.empresa.gestionempleados.exception.DepartamentoNoDisponibleException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -41,6 +42,9 @@ class EmpleadoControllerIT {
 
     @MockBean
     private DepartamentoClient departamentoClient;
+
+    @MockBean
+    private EventPublisher eventPublisher;
 
     @BeforeEach
     void setUpDepartamentoStub() {

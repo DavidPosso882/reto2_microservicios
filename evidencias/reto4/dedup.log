@@ -1,0 +1,52 @@
+-- g2: DEDUP — publish x2 del MISMO envelope (mismo id 22222222-...) via Management API
+-- publish #1:
+{"routed":true}
+-- publish #2:
+{"routed":true}
+-- GET /perfiles/EDEDUP (debe seguir 200, sin duplicados):
+{"id":"7859f0b5-8fa4-4254-8d39-972cbf413e03","empleadoId":"EDEDUP","nombre":"Dedup","apellido":"Test","email":"dedup.test@empresa.com","telefono":"","direccion":"","ciudad":"","biografia":"","archivado":false,"fechaCreacion":"2026-09-21T17:34:26.093669Z","fechaActualizacion":"2026-09-21T17:34:26.093669Z"}
+
+[HTTP_STATUS=200]
+-- GET /notificaciones/EDEDUP (debe seguir 1 sola BIENVENIDA):
+[{"id":"cfc160b2-ded6-41e4-afc2-86f30925af34","tipo":"BIENVENIDA","destinatario":"dedup.test@empresa.com","mensaje":"Hola Dedup Test, ¡bienvenido/a a la empresa! Tu cuenta fue creada con éxito.","fechaEnvio":"2026-09-21T17:34:26.094799+00:00","empleadoId":"EDEDUP"}]
+[HTTP_STATUS=200]
+-- eventos_procesados en perfiles para el id dedup (esperado 1 fila):
+-- eventos_procesados en notificaciones para el id dedup (esperado 1 fila):
+-- eventos_procesados en perfiles para el id dedup (esperado 1 fila):
+     1
+
+-- eventos_procesados en notificaciones para el id dedup (esperado 1 fila):
+     0
+
+-- [NOTA DEFECTO D6-candidato] notificaciones consumer reencola sin limite: payload invalido
+   (data.empleadoId en vez de data.id del catalogo) genero hot-loop de ~70k KeyError en minutos.
+   Payload era mio (Management API), no del publisher real. Codigo consume data.id correcto.
+   Cola purgada para destrabar; se repite DEDUP con envelope conforme al catalogo.
+-- g2-retry: DEDUP x2 envelope catalogo-correcto (data.id):
+-- publish #1:
+{"routed":true}
+-- publish #2:
+{"routed":true}
+-- GET /notificaciones/EDEDUP (esperado exactamente 1 BIENVENIDA, sin duplicado):
+[{"id":"cfc160b2-ded6-41e4-afc2-86f30925af34","tipo":"BIENVENIDA","destinatario":"dedup.test@empresa.com","mensaje":"Hola Dedup Test, ¡bienvenido/a a la empresa! Tu cuenta fue creada con éxito.","fechaEnvio":"2026-09-21T17:34:26.094799+00:00","empleadoId":"EDEDUP"}]
+[HTTP_STATUS=200]
+-- eventos_procesados notificaciones id dedup (esperado 1):
+     0
+
+-- eventos_procesados perfiles id dedup (esperado 1):
+     1
+
+-- g2-final: DEDUP x2 (cola desbloqueada tras restart) envelope catalogo-correcto
+-- publish #1:
+{"routed":true}
+-- publish #2:
+{"routed":true}
+-- GET /notificaciones/EDEDUP (esperado exactamente 1 BIENVENIDA):
+[{"id":"cfc160b2-ded6-41e4-afc2-86f30925af34","tipo":"BIENVENIDA","destinatario":"dedup.test@empresa.com","mensaje":"Hola Dedup Test, ¡bienvenido/a a la empresa! Tu cuenta fue creada con éxito.","fechaEnvio":"2026-09-21T17:34:26.094799+00:00","empleadoId":"EDEDUP"},{"id":"57a5b6ed-bc5b-49b1-9ee9-3fc551c1f3b3","tipo":"BIENVENIDA","destinatario":"dedup.test@empresa.com","mensaje":"Hola Dedup Test, ¡bienvenido/a a la empresa! Tu cuenta fue creada con éxito.","fechaEnvio":"2026-09-21T17:37:33.215371+00:00","empleadoId":"EDEDUP"}]
+[HTTP_STATUS=200]
+-- eventos_procesados notificaciones id dedup (esperado 1):
+     1
+
+-- eventos_procesados perfiles id dedup (esperado 1):
+     1
+

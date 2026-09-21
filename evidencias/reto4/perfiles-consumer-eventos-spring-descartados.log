@@ -1,0 +1,10 @@
+perfiles-service-1  | 2026/09/21 17:04:50 perfiles-consumer: bind empleado.creado: Exception (404) Reason: "NOT_FOUND - no exchange 'ecosistema.eventos' in vhost '/'"; retrying in 30s
+perfiles-service-1  | 2026/09/21 17:05:20 perfiles-consumer: bind empleado.creado: Exception (404) Reason: "NOT_FOUND - no exchange 'ecosistema.eventos' in vhost '/'"; retrying in 30s
+perfiles-service-1  | 2026/09/21 17:05:50 perfiles-consumer: bind empleado.creado: Exception (404) Reason: "NOT_FOUND - no exchange 'ecosistema.eventos' in vhost '/'"; retrying in 30s
+perfiles-service-1  | 2026/09/21 17:06:20 perfiles-consumer: bind empleado.creado: Exception (404) Reason: "NOT_FOUND - no exchange 'ecosistema.eventos' in vhost '/'"; retrying in 30s
+perfiles-service-1  | 2026/09/21 17:06:50 perfiles-consumer: bind empleado.creado: Exception (404) Reason: "NOT_FOUND - no exchange 'ecosistema.eventos' in vhost '/'"; retrying in 30s
+perfiles-service-1  | 2026/09/21 17:07:20 perfiles-consumer: bind empleado.creado: Exception (404) Reason: "NOT_FOUND - no exchange 'ecosistema.eventos' in vhost '/'"; retrying in 30s
+perfiles-service-1  | 2026/09/21 17:07:50 perfiles-consumer: consuming q.perfiles (exchange=ecosistema.eventos)
+perfiles-service-1  | 2026/09/21 17:10:50 perfiles-consumer: malformed message: invalid character '¬' looking for beginning of value; ACKing to discard
+perfiles-service-1  | 2026/09/21 17:11:58 perfiles-consumer: no-op event (id=22222222-2222-4222-8222-222222222222 type=empleado.creado) → ACK without effect
+perfiles-service-1  | 2026/09/21 17:12:16 perfiles-consumer: malformed message: invalid character '¬' looking for beginning of value; ACKing to discard

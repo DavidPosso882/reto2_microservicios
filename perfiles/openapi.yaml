@@ -1,0 +1,210 @@
+openapi: 3.0.3
+info:
+  title: perfiles-service
+  description: |
+    Servicio híbrido del ecosistema (Reto 4 - comunicación asincrónica).
+    Consume eventos `empleado.creado`, `empleado.actualizado` y `empleado.retirado`
+    de RabbitMQ (exchange `ecosistema.eventos`, cola `q.perfiles`) para crear,
+    sincronizar y archivar perfiles, y expone REST para consulta y actualización
+    de los campos propios del perfil (telefono, direccion, ciudad, biografia).
+
+    Envelope de error del ecosistema: `{"status": <http code>, "error": "..."}`.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8083
+    description: Local (fuera de Docker)
+  - url: http://perfiles-service:8083
+    description: Dentro de la red Docker (solo interno, sin puertos al host)
+
+paths:
+  /health:
+    get:
+      summary: Health check propio del servicio
+      operationId: getHealth
+      responses:
+        "200":
+          description: Servicio saludable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: perfiles-service
+
+  /openapi.yaml:
+    get:
+      summary: Especificación OpenAPI servida por el propio servicio
+      operationId: getOpenapiYaml
+      responses:
+        "200":
+          description: Especificación OpenAPI (YAML)
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+  /perfiles:
+    get:
+      summary: Listar todos los perfiles
+      operationId: listPerfiles
+      responses:
+        "200":
+          description: Arreglo de perfiles (posiblemente vacío)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Perfil"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /perfiles/{empleadoId}:
+    parameters:
+      - $ref: "#/components/parameters/EmpleadoId"
+    get:
+      summary: Obtener el perfil de un empleado
+      operationId: getPerfil
+      responses:
+        "200":
+          description: Perfil encontrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Perfil"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+    put:
+      summary: >
+        Actualizar los campos propios del perfil (telefono, direccion, ciudad,
+        biografia). Los campos de identidad (nombre, apellido, email) del cuerpo
+        se ignoran: solo se sincronizan por eventos.
+      operationId: updatePerfil
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActualizacionPerfil"
+      responses:
+        "200":
+          description: Perfil actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Perfil"
+        "400":
+          description: Cuerpo JSON inválido
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+components:
+  parameters:
+    EmpleadoId:
+      name: empleadoId
+      in: path
+      required: true
+      description: Identificador del empleado (id canónico, ej. E001)
+      schema:
+        type: string
+        example: E001
+
+  responses:
+    NotFound:
+      description: Perfil no encontrado
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            status: 404
+            error: "El perfil del empleado 'E999' no existe"
+    Internal:
+      description: Error interno
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        status:
+          type: integer
+          example: 404
+        error:
+          type: string
+          example: "El perfil del empleado 'E999' no existe"
+
+    ActualizacionPerfil:
+      type: object
+      description: Solo estos cuatro campos son actualizables por REST.
+      properties:
+        telefono:
+          type: string
+          example: "+54 11 4444-5555"
+        direccion:
+          type: string
+          example: "Av. Siempreviva 742"
+        ciudad:
+          type: string
+          example: "Buenos Aires"
+        biografia:
+          type: string
+          example: "Desarrollador con foco en backend"
+
+    Perfil:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        empleadoId:
+          type: string
+          example: E001
+        nombre:
+          type: string
+          example: Juan
+        apellido:
+          type: string
+          example: Pérez
+        email:
+          type: string
+          example: juan.perez@empresa.com
+        telefono:
+          type: string
+          example: "+54 11 4444-5555"
+        direccion:
+          type: string
+          example: "Av. Siempreviva 742"
+        ciudad:
+          type: string
+          example: "Buenos Aires"
+        biografia:
+          type: string
+          example: "Desarrollador con foco en backend"
+        archivado:
+          type: boolean
+          description: >
+            true tras empleado.retirado (baja lógica del perfil: nunca se borra).
+        fechaCreacion:
+          type: string
+          format: date-time
+        fechaActualizacion:
+          type: string
+          format: date-time

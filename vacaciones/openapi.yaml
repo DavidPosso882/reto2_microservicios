@@ -1,0 +1,227 @@
+openapi: 3.0.3
+info:
+  title: vacaciones-service
+  description: |
+    Servicio productor del ecosistema (Reto 4 - comunicación asincrónica).
+    Expone REST para gestionar períodos de vacaciones y publica el evento
+    `vacaciones.programadas` (catálogo 3.8) tras cada programación exitosa.
+
+    Valida al empleado contra una **réplica local** alimentada por eventos:
+    consume `empleado.creado` y `empleado.retirado` (catálogos 3.1 y 3.3) del
+    exchange topic `ecosistema.eventos` mediante la cola durable
+    `q.vacaciones.empleados`, con deduplicación por `id` del envelope y ACK
+    manual posterior a la persistencia.
+
+    Envelope de error del ecosistema: `{"status": <http code>, "error": "..."}`.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8085
+    description: Local (fuera de Docker)
+  - url: http://vacaciones-service:8085
+    description: Dentro de la red Docker (solo interno, sin puertos al host)
+
+paths:
+  /health:
+    get:
+      summary: Health check propio del servicio
+      operationId: getHealth
+      responses:
+        "200":
+          description: Servicio saludable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: vacaciones-service
+
+  /openapi.yaml:
+    get:
+      summary: Especificación OpenAPI servida por el propio servicio
+      operationId: getOpenapiYaml
+      responses:
+        "200":
+          description: Especificación OpenAPI (YAML)
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+  /vacaciones:
+    get:
+      summary: Listar períodos de vacaciones (con filtro opcional por empleado)
+      operationId: listVacaciones
+      parameters:
+        - in: query
+          name: empleadoId
+          schema:
+            type: string
+          description: Filtra los períodos de un empleado (ej. E001)
+      responses:
+        "200":
+          description: Arreglo de períodos (posiblemente vacío)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PeriodoVacaciones"
+    post:
+      summary: Programar un período de vacaciones
+      description: |
+        El `id` lo genera el servidor (`V-AAAA-NNNN`, año actual + secuencial
+        de 4 dígitos resuelto con MAX+1 en transacción). Valida:
+        1. `fechaFin` posterior a `fechaInicio`.
+        2. `fechaInicio` no anterior a hoy (fecha del servidor).
+        3. Sin solapamiento (rango inclusivo) con otro período del mismo
+           empleado en `PROGRAMADA` o `EN_CURSO`; en conflicto la respuesta
+           incluye el período en la clave `conflicto`.
+        4. El empleado debe existir en la réplica local y no estar `RETIRADO`.
+        Tras guardar, publica `vacaciones.programadas` (un fallo de publish
+        se registra en el log y NO revierte la BD).
+      operationId: createVacacion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NuevoPeriodo"
+      responses:
+        "201":
+          description: Período programado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeriodoVacaciones"
+        "400":
+          description: Validación fallida (mensaje descriptivo; incluye `conflicto` cuando el motivo es solapamiento)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorValidacion"
+
+  /vacaciones/{id}:
+    get:
+      summary: Obtener un período por id
+      operationId: getVacacion
+      parameters:
+        - $ref: "#/components/parameters/IdVacaciones"
+      responses:
+        "200":
+          description: Período encontrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeriodoVacaciones"
+        "404":
+          description: No existe
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEcosystema"
+    delete:
+      summary: Cancelar un período
+      description: |
+        Si aún no inició (`hoy < fechaInicio`) pasa a `CANCELADA` y devuelve el
+        período con 200. Si ya inició responde 400; si no existe, 404.
+        En este reto solo existen los estados `PROGRAMADA` y `CANCELADA`.
+      operationId: deleteVacacion
+      parameters:
+        - $ref: "#/components/parameters/IdVacaciones"
+      responses:
+        "200":
+          description: Período cancelado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeriodoVacaciones"
+        "400":
+          description: El período ya inició
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEcosystema"
+        "404":
+          description: No existe
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEcosystema"
+
+components:
+  parameters:
+    IdVacaciones:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        example: V-2026-0042
+
+  schemas:
+    NuevoPeriodo:
+      type: object
+      required: [empleadoId, fechaInicio, fechaFin]
+      properties:
+        empleadoId:
+          type: string
+          example: E001
+        fechaInicio:
+          type: string
+          format: date
+          example: "2026-12-15"
+        fechaFin:
+          type: string
+          format: date
+          example: "2026-12-30"
+
+    PeriodoVacaciones:
+      type: object
+      properties:
+        id:
+          type: string
+          example: V-2026-0042
+        empleadoId:
+          type: string
+          example: E001
+        fechaInicio:
+          type: string
+          format: date
+          example: "2026-12-15"
+        fechaFin:
+          type: string
+          format: date
+          example: "2026-12-30"
+        estado:
+          type: string
+          enum: [PROGRAMADA, CANCELADA]
+          example: PROGRAMADA
+        fechaCreacion:
+          type: string
+          format: date-time
+          example: "2026-09-21T14:30:00Z"
+
+    ErrorEcosystema:
+      type: object
+      properties:
+        status:
+          type: integer
+          example: 404
+        error:
+          type: string
+          example: "El período de vacaciones 'V-9999-9999' no existe"
+
+    ErrorValidacion:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "El período se solapa con otro período del empleado 'E001'"
+        conflicto:
+          $ref: "#/components/schemas/PeriodoVacaciones"

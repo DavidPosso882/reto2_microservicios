@@ -1,0 +1,326 @@
+==================================================================
+== Flujo E2E Reto 4 — 2026-09-21T17:06:47Z — Gateway http://localhost:8080 ==
+== PASO 3a: POST /departamentos (IT)
+==================================================================
+{"status":400,"error":"El departamento con id IT ya existe"}
+[HTTP_STATUS=400]
+-- Nota: 400 'ya existe' por datos preexistentes en el volumen (BD creada 4h antes).
+-- Verificacion de estado preexistente:
+{"id":"IT","nombre":"Tecnologia","descripcion":"Departamento de TI"}
+[HTTP_STATUS=200]
+[{"id":"IT","nombre":"Tecnologia","descripcion":"Departamento de TI"}]
+[HTTP_STATUS=200]
+
+==================================================================
+== PASO 3b: POST /empleados (E001)
+==================================================================
+{"status":400,"error":"El id 'E001' ya está registrado"}
+[HTTP_STATUS=400]
+DELETE 1
+-- Limpieza documentada: se borro solo el residuo E001 de una corrida previa (los E0xx del circuit-breaker se preservan).
+== PASO 3b (reintento): POST /empleados (E001)
+{"id":"E001","nombre":"Juan","apellido":"Perez","email":"juan.perez@empresa.com","numeroEmpleado":"NUM-001","cargo":"Developer","area":"IT","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"ACTIVO"}
+[HTTP_STATUS=201]
+-- Esperando ~10s para consumo asincrono...
+
+== PASO 3c: GET /perfiles/E001 y GET /notificaciones/E001
+------------------------------------------------------------------
+{"error":"El perfil del empleado 'E001' no existe","status":404}
+
+[HTTP_STATUS=404]
+[]
+[HTTP_STATUS=200]
+-- [FALLO 3c] Perfil 404 y notificaciones vacias tras 10s.
+ Container reto2-notificaciones-service-1 Restarting 
+ Container reto2-notificaciones-service-1 Started 
+
+== PASO 3c (recuperacion): el evento de E001 se perdio por race de topologia al arranque.
+== Se re-publica el envelope empleado.creado de E001 via Management API (mecanismo del paso 3g).
+{"routed":true}
+== GET /perfiles/E001 despues de republicar ==
+{"id":"0f5bae8b-bdc1-4d45-98a5-08cdb3e06501","empleadoId":"E001","nombre":"Juan","apellido":"Perez","email":"juan.perez@empresa.com","telefono":"","direccion":"","ciudad":"","biografia":"","archivado":false,"fechaCreacion":"2026-09-21T17:09:43.135083Z","fechaActualizacion":"2026-09-21T17:09:43.135083Z"}
+
+[HTTP_STATUS=200]
+
+==================================================================
+== PASO 3d: PUT /perfiles/E001
+==================================================================
+{"id":"0f5bae8b-bdc1-4d45-98a5-08cdb3e06501","empleadoId":"E001","nombre":"Juan","apellido":"Perez","email":"juan.perez@empresa.com","telefono":"+54-11-5555-1234","direccion":"","ciudad":"Buenos Aires","biografia":"Developer backend con pasion por los sistemas distribuidos","archivado":false,"fechaCreacion":"2026-09-21T17:09:43.135083Z","fechaActualizacion":"2026-09-21T17:09:53.654304Z"}
+
+[HTTP_STATUS=200]
+
+==================================================================
+== PASO 3e: POST /vacaciones (REQUIERE vacaciones-service: NO DISPONIBLE, build roto)
+==================================================================
+{"status":503,"error":"El servicio de vacaciones no está disponible en este momento"}
+[HTTP_STATUS=503]
+-- GET /notificaciones/E001 (consumo del evento vacaciones.programadas; consumer de notificaciones caido):
+[]
+[HTTP_STATUS=200]
+
+==================================================================
+== PASO 3f: Validaciones de vacaciones (REQUIEREN vacaciones-service: NO DISPONIBLE)
+==================================================================
+-- f1: fechas incoherentes (fin < inicio)
+{"status":503,"error":"El servicio de vacaciones no está disponible en este momento"}
+[HTTP_STATUS=503]
+-- f2: solapamiento (2026-12-20 -> 2027-01-05, debe traer clave 'conflicto')
+{"status":503,"error":"El servicio de vacaciones no está disponible en este momento"}
+[HTTP_STATUS=503]
+-- f3: empleado inexistente (NO-EXISTE)
+{"status":503,"error":"El servicio de vacaciones no está disponible en este momento"}
+[HTTP_STATUS=503]
+
+==================================================================
+== PASO 3g: DEDUP con empleado EDEDUP
+== g1: POST /empleados EDEDUP
+==================================================================
+{"id":"EDEDUP","nombre":"Dedup","apellido":"Test","email":"dedup.test@empresa.com","numeroEmpleado":"NUM-DUP","cargo":"QA","area":"IT","departamentoId":"IT","fechaIngreso":"2026-04-01","estado":"ACTIVO"}
+[HTTP_STATUS=201]
+-- perfil EDEDUP tras evento real:
+{"error":"El perfil del empleado 'EDEDUP' no existe","status":404}
+
+[HTTP_STATUS=404]
+-- [FALLO publisher] El evento real de EDEDUP publicado por Spring llego binario (JDK serialization:
+--   'malformed message: invalid character ¬' en perfiles-service). EDEDUP sin perfil.
+== g2: publish x2 del MISMO envelope empleado.creado de EDEDUP via Management API
+-- publish #1 (routing=true esperado):
+{"routed":true}-- publish #2 (mismo envelope, mismo id 22222222-...):
+{"routed":true}-- GET /perfiles/EDEDUP (debe ser 200 y perfil unico):
+{"id":"70e77054-6b61-4a9b-9aac-be6f790ce50e","empleadoId":"EDEDUP","nombre":"Dedup","apellido":"Test","email":"dedup.test@empresa.com","telefono":"","direccion":"","ciudad":"","biografia":"","archivado":false,"fechaCreacion":"2026-09-21T17:11:58.942169Z","fechaActualizacion":"2026-09-21T17:11:58.942169Z"}
+
+[HTTP_STATUS=200]
+-- eventos_procesados de perfiles para el id de dedup (debe haber 1 fila):
+ count 
+-------
+     1
+(1 row)
+
+-- GET /notificaciones/EDEDUP:
+[]
+[HTTP_STATUS=200]
+
+==================================================================
+== PASO 3h: DELETE /empleados/E001 (baja logica)
+==================================================================
+{"id":"E001","nombre":"Juan","apellido":"Perez","email":"juan.perez@empresa.com","numeroEmpleado":"NUM-001","cargo":"Developer","area":"IT","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"RETIRADO","fechaRetiro":"2026-09-21T17:12:16.096328404Z"}
+[HTTP_STATUS=200]
+-- GET /empleados/E001:
+{"id":"E001","nombre":"Juan","apellido":"Perez","email":"juan.perez@empresa.com","numeroEmpleado":"NUM-001","cargo":"Developer","area":"IT","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"RETIRADO","fechaRetiro":"2026-09-21T17:12:16.096328404Z"}
+[HTTP_STATUS=200]
+-- GET /empleados?estado=RETIRADO:
+[{"id":"E001","nombre":"Juan","apellido":"Perez","email":"juan.perez@empresa.com","numeroEmpleado":"NUM-001","cargo":"Developer","area":"IT","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"RETIRADO","fechaRetiro":"2026-09-21T17:12:16.096328404Z"}]
+[HTTP_STATUS=200]
+-- GET /notificaciones/E001 (esperaria DESVINCULACION):
+[]
+[HTTP_STATUS=200]
+-- GET /perfiles/E001 (esperaria archivado=true):
+{"id":"0f5bae8b-bdc1-4d45-98a5-08cdb3e06501","empleadoId":"E001","nombre":"Juan","apellido":"Perez","email":"juan.perez@empresa.com","telefono":"+54-11-5555-1234","direccion":"","ciudad":"Buenos Aires","biografia":"Developer backend con pasion por los sistemas distribuidos","archivado":false,"fechaCreacion":"2026-09-21T17:09:43.135083Z","fechaActualizacion":"2026-09-21T17:09:53.654304Z"}
+
+[HTTP_STATUS=200]
+-- eventos_procesados de perfiles (registro de empleado.retirado de Spring?):
+                  id                  |         procesado_en          
+--------------------------------------+-------------------------------
+ 11111111-1111-4111-8111-111111111111 | 2026-09-21 17:09:43.135083+00
+ 22222222-2222-4222-8222-222222222222 | 2026-09-21 17:11:58.942169+00
+(2 rows)
+
+perfiles-service-1  | 2026/09/21 17:10:50 perfiles-consumer: malformed message: invalid character '¬' looking for beginning of value; ACKing to discard
+perfiles-service-1  | 2026/09/21 17:11:58 perfiles-consumer: no-op event (id=22222222-2222-4222-8222-222222222222 type=empleado.creado) → ACK without effect
+perfiles-service-1  | 2026/09/21 17:12:16 perfiles-consumer: malformed message: invalid character '¬' looking for beginning of value; ACKing to discard
+
+==================================================================
+== PASO 3i: docker compose restart notificaciones-service + persistencia
+==================================================================
+-- GET /notificaciones ANTES del restart:
+-- GET /notificaciones ANTES del restart:
+[]
+[HTTP_STATUS=200]
+-- GET /notificaciones DESPUES del restart (debe ser igual que antes):
+[]
+[HTTP_STATUS=200]
+-- GET /perfiles/E001 tras restart (persistencia de otros servicios):
+{"id":"0f5bae8b-bdc1-4d45-98a5-08cdb3e06501","empleadoId":"E001","nombre":"Juan","apellido":"Perez","email":"juan.perez@empresa.com","telefono":"+54-11-5555-1234","direccion":"","ciudad":"Buenos Aires","biografia":"Developer backend con pasion por los sistemas distribuidos","archivado":false,"fechaCreacion":"2026-09-21T17:09:43.135083Z","fechaActualizacion":"2026-09-21T17:09:53.654304Z"}
+
+[HTTP_STATUS=200]
+
+==================================================================
+== RESUMEN DE ESTADO FINAL: docker compose ps
+==================================================================
+NAME                              IMAGE                          COMMAND                  SERVICE                   CREATED         STATUS                    PORTS
+reto2-api-gateway-1               reto2-api-gateway              "docker-entrypoint.s…"   api-gateway               9 minutes ago   Up 9 minutes (healthy)    0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+reto2-database-departamentos-1    postgres:16-alpine             "docker-entrypoint.s…"   database-departamentos    4 hours ago     Up 9 minutes (healthy)    5432/tcp
+reto2-database-empleados-1        postgres:16-alpine             "docker-entrypoint.s…"   database-empleados        4 hours ago     Up 9 minutes (healthy)    5432/tcp
+reto2-database-notificaciones-1   postgres:16-alpine             "docker-entrypoint.s…"   database-notificaciones   9 minutes ago   Up 9 minutes (healthy)    5432/tcp
+reto2-database-perfiles-1         postgres:16-alpine             "docker-entrypoint.s…"   database-perfiles         9 minutes ago   Up 9 minutes (healthy)    5432/tcp
+reto2-database-vacaciones-1       postgres:16-alpine             "docker-entrypoint.s…"   database-vacaciones       9 minutes ago   Up 9 minutes (healthy)    5432/tcp
+reto2-departamentos-service-1     reto2-departamentos-service    "docker-entrypoint.s…"   departamentos-service     4 hours ago     Up 9 minutes (healthy)    8082/tcp
+reto2-empleados-service-1         reto2-empleados-service        "java -jar app.jar"      empleados-service         9 minutes ago   Up 9 minutes (healthy)    8081/tcp
+reto2-message-broker-1            rabbitmq:3-management          "docker-entrypoint.s…"   message-broker            9 minutes ago   Up 9 minutes (healthy)    4369/tcp, 5671/tcp, 0.0.0.0:5672->5672/tcp, [::]:5672->5672/tcp, 15671/tcp, 15691-15692/tcp, 25672/tcp, 0.0.0.0:15672->15672/tcp, [::]:15672->15672/tcp
+reto2-notificaciones-service-1    reto2-notificaciones-service   "uvicorn app.main:ap…"   notificaciones-service    9 minutes ago   Up 16 seconds (healthy)   8084/tcp
+reto2-perfiles-service-1          reto2-perfiles-service         "/app/perfiles-servi…"   perfiles-service          9 minutes ago   Up 9 minutes (healthy)    8083/tcp
+
+== FIN DEL FLUJO 2026-09-21T17:12:55Z ==
+
+==================================================================
+== Re-verificacion Reto 4 post-fixes D1-D4 — 2026-09-21T17:33:27Z — Gateway http://localhost:8080 ==
+== Bring-up LIMPIO: docker compose down -v + up --build -d ==
+== 11/12 servicios healthy; vacaciones-service Exited(1) en runtime (ver vacaciones-exit-recheck.log) ==
+==================================================================
+-- PASO 3a: POST /departamentos (IT)
+{"id":"IT","nombre":"Tecnologia","descripcion":"Departamento de TI"}
+[HTTP_STATUS=201]
+-- PASO 3b: POST /empleados (E001) — BD limpia, sin residuos
+{"id":"E001","nombre":"Juan","apellido":"Perez","email":"juan.perez@empresa.com","numeroEmpleado":"NUM-001","cargo":"Developer","area":"IT","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"ACTIVO"}
+[HTTP_STATUS=201]
+-- Esperando ~15s para consumo asincrono...
+-- PASO 3c: GET /perfiles/E001 (perfil por defecto) + GET /notificaciones/E001 (1 BIENVENIDA)
+{"id":"aa7e686b-7b80-4f34-bebb-c2055c465337","empleadoId":"E001","nombre":"Juan","apellido":"Perez","email":"juan.perez@empresa.com","telefono":"","direccion":"","ciudad":"","biografia":"","archivado":false,"fechaCreacion":"2026-09-21T17:33:30.426486Z","fechaActualizacion":"2026-09-21T17:33:30.426486Z"}
+
+[HTTP_STATUS=200]
+[{"id":"6c6528fe-0c1f-4991-b880-dcc57b139955","tipo":"BIENVENIDA","destinatario":"juan.perez@empresa.com","mensaje":"Hola Juan Perez, ¡bienvenido/a a la empresa! Tu cuenta fue creada con éxito.","fechaEnvio":"2026-09-21T17:33:30.431955+00:00","empleadoId":"E001"}]
+[HTTP_STATUS=200]
+-- PASO 3d: PUT /perfiles/E001
+{"id":"aa7e686b-7b80-4f34-bebb-c2055c465337","empleadoId":"E001","nombre":"Juan","apellido":"Perez","email":"juan.perez@empresa.com","telefono":"+54-11-5555-1234","direccion":"","ciudad":"Buenos Aires","biografia":"Developer backend con pasion por los sistemas distribuidos","archivado":false,"fechaCreacion":"2026-09-21T17:33:30.426486Z","fechaActualizacion":"2026-09-21T17:33:49.419774Z"}
+
+[HTTP_STATUS=200]
+-- PASO 3e: POST /vacaciones 2026-12-15 -> 2026-12-30 (esperado 201 + notificacion VACACIONES)
+{"status":503,"error":"El servicio de vacaciones no está disponible en este momento"}
+[HTTP_STATUS=503]
+-- GET /notificaciones/E001 tras vacaciones (esperada VACACIONES)
+[{"id":"6c6528fe-0c1f-4991-b880-dcc57b139955","tipo":"BIENVENIDA","destinatario":"juan.perez@empresa.com","mensaje":"Hola Juan Perez, ¡bienvenido/a a la empresa! Tu cuenta fue creada con éxito.","fechaEnvio":"2026-09-21T17:33:30.431955+00:00","empleadoId":"E001"}]
+[HTTP_STATUS=200]
+-- PASO 3f: Validaciones de vacaciones (503 por D5: vacaciones-service caido en runtime)
+-- f1: fechas incoherentes (fin < inicio)
+{"status":503,"error":"El servicio de vacaciones no está disponible en este momento"}
+[HTTP_STATUS=503]
+-- f2: solapamiento (2026-12-20 -> 2027-01-05, esperado clave 'conflicto')
+{"status":503,"error":"El servicio de vacaciones no está disponible en este momento"}
+[HTTP_STATUS=503]
+-- f3: empleado inexistente (NO-EXISTE)
+{"status":503,"error":"El servicio de vacaciones no está disponible en este momento"}
+[HTTP_STATUS=503]
+-- PASO 3g: DEDUP con empleado EDEDUP
+-- g1: POST /empleados EDEDUP
+{"id":"EDEDUP","nombre":"Dedup","apellido":"Test","email":"dedup.test@empresa.com","numeroEmpleado":"NUM-DUP","cargo":"QA","area":"IT","departamentoId":"IT","fechaIngreso":"2026-04-01","estado":"ACTIVO"}
+[HTTP_STATUS=201]
+-- perfil EDEDUP tras evento real (sin republicacion manual):
+{"id":"7859f0b5-8fa4-4254-8d39-972cbf413e03","empleadoId":"EDEDUP","nombre":"Dedup","apellido":"Test","email":"dedup.test@empresa.com","telefono":"","direccion":"","ciudad":"","biografia":"","archivado":false,"fechaCreacion":"2026-09-21T17:34:26.093669Z","fechaActualizacion":"2026-09-21T17:34:26.093669Z"}
+
+[HTTP_STATUS=200]
+-- GET /notificaciones/EDEDUP (esperada BIENVENIDA):
+[{"id":"cfc160b2-ded6-41e4-afc2-86f30925af34","tipo":"BIENVENIDA","destinatario":"dedup.test@empresa.com","mensaje":"Hola Dedup Test, ¡bienvenido/a a la empresa! Tu cuenta fue creada con éxito.","fechaEnvio":"2026-09-21T17:34:26.094799+00:00","empleadoId":"EDEDUP"}]
+[HTTP_STATUS=200]
+-- Chequeo de 'malformed message' en logs de consumers (debe ser 0):
+0
+
+-- PASO 3h: DELETE /empleados/E001 (baja logica, esperado 200 RETIRADO + fechaRetiro)
+{"id":"E001","nombre":"Juan","apellido":"Perez","email":"juan.perez@empresa.com","numeroEmpleado":"NUM-001","cargo":"Developer","area":"IT","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"RETIRADO","fechaRetiro":"2026-09-21T17:38:05.579798862Z"}
+[HTTP_STATUS=200]
+-- GET /empleados/E001 (esperado RETIRADO):
+{"id":"E001","nombre":"Juan","apellido":"Perez","email":"juan.perez@empresa.com","numeroEmpleado":"NUM-001","cargo":"Developer","area":"IT","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"RETIRADO","fechaRetiro":"2026-09-21T17:38:05.579798862Z"}
+[HTTP_STATUS=200]
+-- GET /empleados?estado=RETIRADO (esperado lista a E001):
+[{"id":"E001","nombre":"Juan","apellido":"Perez","email":"juan.perez@empresa.com","numeroEmpleado":"NUM-001","cargo":"Developer","area":"IT","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"RETIRADO","fechaRetiro":"2026-09-21T17:38:05.579798862Z"}]
+[HTTP_STATUS=200]
+-- GET /notificaciones/E001 (esperada DESVINCULACION):
+[{"id":"6c6528fe-0c1f-4991-b880-dcc57b139955","tipo":"BIENVENIDA","destinatario":"juan.perez@empresa.com","mensaje":"Hola Juan Perez, ¡bienvenido/a a la empresa! Tu cuenta fue creada con éxito.","fechaEnvio":"2026-09-21T17:33:30.431955+00:00","empleadoId":"E001"},{"id":"60727483-2014-405e-b65f-30bea0d9e373","tipo":"DESVINCULACION","destinatario":"juan.perez@empresa.com","mensaje":"Hola Juan Perez, te informamos que tu vínculo con la empresa ha finalizado. Gracias por tu paso por la organización.","fechaEnvio":"2026-09-21T17:38:05.598791+00:00","empleadoId":"E001"}]
+[HTTP_STATUS=200]
+-- GET /perfiles/E001 (esperado archivado=true):
+{"id":"aa7e686b-7b80-4f34-bebb-c2055c465337","empleadoId":"E001","nombre":"Juan","apellido":"Perez","email":"juan.perez@empresa.com","telefono":"+54-11-5555-1234","direccion":"","ciudad":"Buenos Aires","biografia":"Developer backend con pasion por los sistemas distribuidos","archivado":true,"fechaCreacion":"2026-09-21T17:33:30.426486Z","fechaActualizacion":"2026-09-21T17:38:05.597562Z"}
+
+[HTTP_STATUS=200]
+-- PASO 3i: restart de consumer + persistencia
+-- notificaciones ANTES del restart:
+[{"id":"6c6528fe-0c1f-4991-b880-dcc57b139955","tipo":"BIENVENIDA","destinatario":"juan.perez@empresa.com","mensaje":"Hola Juan Perez, ¡bienvenido/a a la empresa! Tu cuenta fue creada con éxito.","fechaEnvio":"2026-09-21T17:33:30.431955+00:00","empleadoId":"E001"},{"id":"60727483-2014-405e-b65f-30bea0d9e373","tipo":"DESVINCULACION","destinatario":"juan.perez@empresa.com","mensaje":"Hola Juan Perez, te informamos que tu vínculo con la empresa ha finalizado. Gracias por tu paso por la organización.","fechaEnvio":"2026-09-21T17:38:05.598791+00:00","empleadoId":"E001"}]
+-- perfiles EDEDUP despues del restart de perfiles-service (esperado persistente):
+{"id":"7859f0b5-8fa4-4254-8d39-972cbf413e03","empleadoId":"EDEDUP","nombre":"Dedup","apellido":"Test","email":"dedup.test@empresa.com","telefono":"","direccion":"","ciudad":"","biografia":"","archivado":false,"fechaCreacion":"2026-09-21T17:34:26.093669Z","fechaActualizacion":"2026-09-21T17:34:26.093669Z"}
+
+[HTTP_STATUS=200]
+-- perfiles E001 archivado persiste:
+archivado = True
+-- notificaciones DESPUES del restart (debe ser identico a antes):
+[{"id":"6c6528fe-0c1f-4991-b880-dcc57b139955","tipo":"BIENVENIDA","destinatario":"juan.perez@empresa.com","mensaje":"Hola Juan Perez, ¡bienvenido/a a la empresa! Tu cuenta fue creada con éxito.","fechaEnvio":"2026-09-21T17:33:30.431955+00:00","empleadoId":"E001"},{"id":"60727483-2014-405e-b65f-30bea0d9e373","tipo":"DESVINCULACION","destinatario":"juan.perez@empresa.com","mensaje":"Hola Juan Perez, te informamos que tu vínculo con la empresa ha finalizado. Gracias por tu paso por la organización.","fechaEnvio":"2026-09-21T17:38:05.598791+00:00","empleadoId":"E001"}]
+[HTTP_STATUS=200]
+[IDENTICO antes/despues]
+-- consumers activos tras restarts:
+Timeout: 60.0 seconds ...
+Listing queues for vhost / ...
+name	consumers
+q.perfiles	1
+q.notificaciones	1
+-- EVIDENCIA D3: payload REAL publicado por Spring (Jackson JSON), inspeccionado con requeue
+{"id":"E002","nombre":"Ana","apellido":"Gomez","email":"ana.gomez@empresa.com","numeroEmpleado":"NUM-002","cargo":"DevOps","area":"IT","departamentoId":"IT","fechaIngreso":"2026-05-01","estado":"ACTIVO"}
+[HTTP_STATUS=201]
+-- Mensaje real en q.perfiles (Management API, ack_requeue_true):
+[]
+-- 'malformed' en logs de consumers (esperado 0):
+0
+-- EVIDENCIA D3 (2do intento): payload real de Spring via get con ackmode ack_requeue_true
+[]
+-- EVIDENCIA D3 (consumer frenado para inspeccion): POST /empleados E003
+{"status":400,"error":"El email 'ana.gomez@empresa.com' ya está registrado"}
+[HTTP_STATUS=400]
+-- Mensaje REAL publicado por Spring (en cola q.perfiles, sin consumir):
+-- EVIDENCIA D3 (reintento con email unico): POST /empleados E003
+{"id":"E003","nombre":"Ana","apellido":"Gomez","email":"ana.gomez.dev@empresa.com","numeroEmpleado":"NUM-003","cargo":"DevOps","area":"IT","departamentoId":"IT","fechaIngreso":"2026-05-01","estado":"ACTIVO"}
+[HTTP_STATUS=201]
+-- Mensaje REAL publicado por Spring (en cola q.perfiles, consumer frenado):
+content_type: application/json
+payload: {"id":"bee3df97-968f-4321-a8c6-fc791af25b12","type":"empleado.creado","version":"1.0","occurredAt":"2026-09-21T17:39:33.614669582Z","producer":"empleados-service","data":{"id":"E003","nombre":"Ana","apellido":"Gomez","email":"ana.gomez.dev@empresa.com","numeroEmpleado":"NUM-003","cargo":"DevOps","area":"IT","departamentoId":"IT","fechaIngreso":"2026-05-01","estado":"ACTIVO"}}
+-- perfiles-service reanudado; mensaje reencolado debe consumirse:
+{"id":"e48d1493-8137-4c98-b31e-abe800665a10","empleadoId":"E003","nombre":"Ana","apellido":"Gomez","email":"ana.gomez.dev@empresa.com","telefono":"","direccion":"","ciudad":"","biografia":"","archivado":false,"fechaCreacion":"2026-09-21T17:39:40.10215Z","fechaActualizacion":"2026-09-21T17:39:40.10215Z"}
+
+[HTTP_STATUS=200]
+Timeout: 60.0 seconds ...
+Listing queues for vhost / ...
+name	messages
+q.perfiles	0
+q.notificaciones	0
+
+===========================================================
+-- VERIFICACION FINAL RETO 4 (post-fixes D5+D6) — 2026-09-21T18:02Z
+-- Estado: 12/12 containers healthy. E001 RETIRADO (pre-existente).
+-- Empleado fresco E004 para validar pub/sub -> replica -> vacaciones.
+===========================================================
+[2026-09-21T18:02:48Z] -- PASO 1: POST /empleados E004 (fresco)
+{"id":"E004","nombre":"Diego","apellido":"Fernandez","email":"diego.fernandez@empresa.com","numeroEmpleado":"NUM-004","cargo":"QA","area":"IT","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"ACTIVO"}
+201
+[HTTP_STATUS=201]
+[2026-09-21T18:03:06Z] -- PASO 2 (intento 1): POST /vacaciones {empleadoId:E004, 2026-12-15 -> 2026-12-30}
+{"id":"V-2026-0001","empleadoId":"E004","fechaInicio":"2026-12-15","fechaFin":"2026-12-30","estado":"PROGRAMADA","fechaCreacion":"2026-09-21T18:03:06Z"}
+201
+[HTTP_STATUS=201]
+[2026-09-21T18:03:23Z] -- PASO 3a: GET /notificaciones/E004 (debe incluir VACACIONES)
+[{"id":"5e76e690-4a0e-4eb0-b591-4d9d67b47ff5","tipo":"BIENVENIDA","destinatario":"diego.fernandez@empresa.com","mensaje":"Hola Diego Fernandez, ¡bienvenido/a a la empresa! Tu cuenta fue creada con éxito.","fechaEnvio":"2026-09-21T18:02:48.443786+00:00","empleadoId":"E004"},{"id":"8505ff98-257e-4e53-99db-47412c0feba7","tipo":"VACACIONES","destinatario":"diego.fernandez@empresa.com","mensaje":"Tus vacaciones fueron programadas desde 2026-12-15 hasta 2026-12-30. ¡Buen descanso!","fechaEnvio":"2026-09-21T18:03:06.426199+00:00","empleadoId":"E004"}]
+[HTTP_STATUS=200]
+[2026-09-21T18:03:23Z] -- PASO 3b: 400 incoherente (fechaFin < fechaInicio)
+{"error":"fechaFin (2027-01-05) debe ser posterior a fechaInicio (2027-01-10)"}
+400
+[HTTP_STATUS=400]
+[2026-09-21T18:03:23Z] -- PASO 3c: 400 solapamiento (conflicto con 2026-12-15..2026-12-30)
+{"error":"El período se solapa con otro período del empleado 'E004'","conflicto":{"id":"V-2026-0001","empleadoId":"E004","fechaInicio":"2026-12-15","fechaFin":"2026-12-30","estado":"PROGRAMADA","fechaCreacion":"2026-09-21T18:03:06Z"}}
+400
+[HTTP_STATUS=400]
+[2026-09-21T18:03:23Z] -- PASO 3d: 400 empleado inexistente
+{"error":"El empleado 'E999' no existe en la réplica local (aún no llegó el evento empleado.creado)"}
+400
+[HTTP_STATUS=400]
+[2026-09-21T18:03:32Z] -- PASO 3e: DELETE /vacaciones/V-2026-0001 (periodo futuro -> CANCELADA)
+{"id":"V-2026-0001","empleadoId":"E004","fechaInicio":"2026-12-15","fechaFin":"2026-12-30","estado":"CANCELADA","fechaCreacion":"2026-09-21T18:03:06Z"}
+200
+[HTTP_STATUS=200]
+[2026-09-21T18:03:32Z] -- PASO 3f: GET /vacaciones?empleadoId=E004 (estado CANCELADA)
+[{"id":"V-2026-0001","empleadoId":"E004","fechaInicio":"2026-12-15","fechaFin":"2026-12-30","estado":"CANCELADA","fechaCreacion":"2026-09-21T18:03:06Z"}]
+[HTTP_STATUS=200]
+[2026-09-21T18:03:38Z] -- PASO 4a REGRESION: GET /perfiles/E004 (perfil default, no archivado)
+{"id":"f91a0415-1309-4d21-9c43-25214980797a","empleadoId":"E004","nombre":"Diego","apellido":"Fernandez","email":"diego.fernandez@empresa.com","telefono":"","direccion":"","ciudad":"","biografia":"","archivado":false,"fechaCreacion":"2026-09-21T18:02:48.440086Z","fechaActualizacion":"2026-09-21T18:02:48.440086Z"}
+
+[HTTP_STATUS=200]
+[2026-09-21T18:03:38Z] -- PASO 4b REGRESION: GET /empleados?estado=RETIRADO (E001)
+[{"id":"E001","nombre":"Juan","apellido":"Perez","email":"juan.perez@empresa.com","numeroEmpleado":"NUM-001","cargo":"Developer","area":"IT","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"RETIRADO","fechaRetiro":"2026-09-21T17:38:05.579798862Z"}]
+[HTTP_STATUS=200]
+[2026-09-21T18:03:38Z] -- PASO 4c REGRESION: GET /notificaciones (no vacio)
+[{"id":"6c6528fe-0c1f-4991-b880-dcc57b139955","tipo":"BIENVENIDA","destinatario":"juan.perez@empresa.com","mensaje":"Hola Juan Perez, ¡bienvenido/a a la empresa! Tu cuenta fue creada con éxito.","fechaEnvio":"2026-09-21T17:33:30.431955+00:00","empleadoId":"E001"},{"id":"cfc160b2-ded6-41e4-afc2-86f30925af34","tipo":"BIENVENIDA","destinatario":"dedup.test@empresa.com","mensaje":"Hola Dedup Test, � ...
+[HTTP_STATUS=200]
+[TOTAL_NOTIFICACIONES=8]

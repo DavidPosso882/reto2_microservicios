@@ -29,3 +29,7 @@ CREATE TABLE IF NOT EXISTS empleado (
     CONSTRAINT uk_empleado_email UNIQUE (email),
     CONSTRAINT uk_empleado_numero_empleado UNIQUE (numero_empleado)
 );
+
+-- Reto 4: baja lógica y auditoría. Fecha de retiro en ISO-8601 UTC
+-- (null mientras el empleado esté vinculado).
+ALTER TABLE empleado ADD COLUMN IF NOT EXISTS fecha_retiro VARCHAR(255);

@@ -38,6 +38,12 @@
             <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
 
+        <!-- Mensajería AMQP (Reto 4): publicación de eventos del ecosistema -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+
         <!-- Driver PostgreSQL (Reto 2) -->
         <dependency>
             <groupId>org.postgresql</groupId>

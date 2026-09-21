@@ -92,6 +92,15 @@ public class Empleado {
             example = "Empleado registrado. Validación de departamento pendiente.")
     private String mensaje;
 
+    // Baja lógica (Reto 4): fecha del retiro en ISO-8601 UTC, null mientras
+    // el empleado esté vinculado. El prefijo de fecha (primeros 10 caracteres)
+    // es comparable lexicográficamente, lo que permite filtrar por rango.
+    @Column(name = "fecha_retiro")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Fecha de retiro en ISO-8601 UTC, presente solo para empleados RETIRADO",
+            example = "2026-09-21T14:30:00Z")
+    private String fechaRetiro;
+
     public Empleado() {}
 
     public Empleado(String id, String nombre, String apellido, String email,
@@ -142,4 +151,7 @@ public class Empleado {
 
     public String getMensaje() { return mensaje; }
     public void setMensaje(String mensaje) { this.mensaje = mensaje; }
+
+    public String getFechaRetiro() { return fechaRetiro; }
+    public void setFechaRetiro(String fechaRetiro) { this.fechaRetiro = fechaRetiro; }
 }

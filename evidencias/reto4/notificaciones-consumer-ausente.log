@@ -1,0 +1,24 @@
+# Evidencia: el consumer de notificaciones-service nunca arranca (defecto de codigo)
+
+## Hecho observable
+- `q.notificaciones` no existe en el broker (Management API /api/queues solo lista q.perfiles),
+  ni siquiera tras `docker compose restart notificaciones-service` (12s de espera).
+- `GET /notificaciones/E001` y `GET /notificaciones/EDEDUP` devuelven [] en todo el flujo.
+- Los logs del contenedor solo muestran healthchecks (uvicorn); no hay output del consumer
+  porque logging de Python no esta configurado a stdout en este servicio.
+
+## Causa raiz (leida del codigo, sin modificarlo)
+- notificaciones/app/consumer.py define `iniciar_consumer()` (linea 193) que declara
+  exchange + cola durables y arranca el thread amqp-consumer.
+- notificaciones/app/main.py: `@app.on_event("startup")` solo hace `Base.metadata.create_all(...)`
+  y NUNCA llama a `iniciar_consumer()`. Ningun modulo del runtime lo invoca (solo los tests).
+- Ademas consumer.py agota reintentos de conexion al arranque y deja el consumer inactivo
+  ("No se pudo conectar a RabbitMQ tras %s intentos; el consumer queda inactivo"), pero aqui
+  ni siquiera llega a intentarlo: no se arranca.
+
+## Impacto
+- Los eventos empleado.creado / empleado.retirado / vacaciones.programadas no generan
+  notificaciones (BIENVENIDA / DESVINCULACION / VACACIONES) para nadie.
+49:    @app.on_event("startup")
+50:    def _startup() -> None:
+52:        Base.metadata.create_all(bind=engine)

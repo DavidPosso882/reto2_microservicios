@@ -1,0 +1,20 @@
+empleados-service-1  | 2026-09-21T17:04:01.244Z ERROR 1 --- [gestion-empleados] [nio-8081-exec-1] o.h.engine.jdbc.spi.SqlExceptionHelper   : ERROR: column e1_0.fecha_retiro does not exist
+empleados-service-1  |   Position: 114
+--
+empleados-service-1  | 2026-09-21T17:04:06.333Z ERROR 1 --- [gestion-empleados] [nio-8081-exec-2] o.h.engine.jdbc.spi.SqlExceptionHelper   : ERROR: column e1_0.fecha_retiro does not exist
+empleados-service-1  |   Position: 114
+--
+empleados-service-1  | 2026-09-21T17:04:11.386Z ERROR 1 --- [gestion-empleados] [nio-8081-exec-3] o.h.engine.jdbc.spi.SqlExceptionHelper   : ERROR: column e1_0.fecha_retiro does not exist
+empleados-service-1  |   Position: 114
+--
+empleados-service-1  | 2026-09-21T17:04:16.430Z ERROR 1 --- [gestion-empleados] [nio-8081-exec-4] o.h.engine.jdbc.spi.SqlExceptionHelper   : ERROR: column e1_0.fecha_retiro does not exist
+empleados-service-1  |   Position: 114
+--
+empleados-service-1  | 2026-09-21T17:04:21.478Z ERROR 1 --- [gestion-empleados] [nio-8081-exec-5] o.h.engine.jdbc.spi.SqlExceptionHelper   : ERROR: column e1_0.fecha_retiro does not exist
+empleados-service-1  |   Position: 114
+--
+empleados-service-1  | 2026-09-21T17:04:31.515Z ERROR 1 --- [gestion-empleados] [nio-8081-exec-6] o.h.engine.jdbc.spi.SqlExceptionHelper   : ERROR: column e1_0.fecha_retiro does not exist
+empleados-service-1  |   Position: 114
+--
+empleados-service-1  | 2026-09-21T17:04:41.556Z ERROR 1 --- [gestion-empleados] [nio-8081-exec-7] o.h.engine.jdbc.spi.SqlExceptionHelper   : ERROR: column e1_0.fecha_retiro does not exist
+empleados-service-1  |   Position: 114

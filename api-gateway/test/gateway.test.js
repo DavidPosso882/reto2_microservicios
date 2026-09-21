@@ -55,26 +55,60 @@ function listenEphemeral(app) {
 describe('api-gateway', () => {
   let empleados;
   let departamentos;
+  let perfiles;
+  let notificaciones;
+  let vacaciones;
   let gateway;
   let gatewayDownstream;
+  let gatewayVacacionesDown;
 
   before(async () => {
     empleados = await startEchoUpstream();
     departamentos = await startEchoUpstream();
+    perfiles = await startEchoUpstream();
+    notificaciones = await startEchoUpstream();
+    vacaciones = await startEchoUpstream();
     gateway = await listenEphemeral(
-      createGateway({ empleadosUrl: empleados.url, departamentosUrl: departamentos.url }),
+      createGateway({
+        empleadosUrl: empleados.url,
+        departamentosUrl: departamentos.url,
+        perfilesUrl: perfiles.url,
+        notificacionesUrl: notificaciones.url,
+        vacacionesUrl: vacaciones.url,
+      }),
     );
     // Gateway whose departamentos destination is unreachable (closed port 1).
     gatewayDownstream = await listenEphemeral(
-      createGateway({ empleadosUrl: empleados.url, departamentosUrl: 'http://127.0.0.1:1' }),
+      createGateway({
+        empleadosUrl: empleados.url,
+        departamentosUrl: 'http://127.0.0.1:1',
+        perfilesUrl: perfiles.url,
+        notificacionesUrl: notificaciones.url,
+        vacacionesUrl: vacaciones.url,
+      }),
+    );
+    // Gateway whose vacaciones destination is unreachable (closed port 1);
+    // the other routes point at the real fake upstreams so only vacaciones fails.
+    gatewayVacacionesDown = await listenEphemeral(
+      createGateway({
+        empleadosUrl: empleados.url,
+        departamentosUrl: departamentos.url,
+        perfilesUrl: perfiles.url,
+        notificacionesUrl: notificaciones.url,
+        vacacionesUrl: 'http://127.0.0.1:1',
+      }),
     );
   });
 
   after(() => {
     empleados.server.close();
     departamentos.server.close();
+    perfiles.server.close();
+    notificaciones.server.close();
+    vacaciones.server.close();
     gateway.server.close();
     gatewayDownstream.server.close();
+    gatewayVacacionesDown.server.close();
   });
 
   it('expone su propio /health sin depender de los servicios', async () => {
@@ -116,7 +150,13 @@ describe('api-gateway', () => {
       body: { status: 404, error: 'El departamento con id X no existe' },
     });
     const gw = await listenEphemeral(
-      createGateway({ empleadosUrl: empleados.url, departamentosUrl: failing.url }),
+      createGateway({
+        empleadosUrl: empleados.url,
+        departamentosUrl: failing.url,
+        perfilesUrl: perfiles.url,
+        notificacionesUrl: notificaciones.url,
+        vacacionesUrl: vacaciones.url,
+      }),
     );
     try {
       const res = await fetch(`${gw.url}/departamentos/X`);
@@ -143,5 +183,80 @@ describe('api-gateway', () => {
     const res = await fetch(`${gateway.url}/no-existe`);
     assert.equal(res.status, 404);
     assert.deepEqual(await res.json(), { status: 404, error: 'Recurso no encontrado' });
+  });
+
+  it('enruta /perfiles/* al servicio de perfiles preservando ruta y query', async () => {
+    const res = await fetch(`${gateway.url}/perfiles/E001?detalle=completo`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { echoed: true });
+    assert.equal(perfiles.requests.at(-1).url, '/perfiles/E001?detalle=completo');
+  });
+
+  it('enruta /notificaciones/* al servicio de notificaciones preservando ruta y query', async () => {
+    const res = await fetch(`${gateway.url}/notificaciones?empleado=E001`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { echoed: true });
+    assert.equal(notificaciones.requests.at(-1).url, '/notificaciones?empleado=E001');
+  });
+
+  it('enruta /vacaciones/* al servicio de vacaciones preservando ruta y query', async () => {
+    const res = await fetch(`${gateway.url}/vacaciones/E001?estado=pendiente`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { echoed: true });
+    assert.equal(vacaciones.requests.at(-1).url, '/vacaciones/E001?estado=pendiente');
+  });
+
+  it('propaga el cuerpo y las cabeceras en un POST a vacaciones sin alterarlos', async () => {
+    const payload = { empleadoId: 'E001', fechaInicio: '2025-01-10', dias: 5 };
+    const res = await fetch(`${gateway.url}/vacaciones`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test': 'vac' },
+      body: JSON.stringify(payload),
+    });
+    assert.equal(res.status, 200);
+    const seen = vacaciones.requests.at(-1);
+    assert.equal(seen.method, 'POST');
+    assert.equal(seen.url, '/vacaciones');
+    assert.deepEqual(JSON.parse(seen.body), payload);
+    assert.equal(seen.headers['x-test'], 'vac');
+  });
+
+  it('propaga el código de estado de vacaciones (400 de validación intacto)', async () => {
+    const failing = await startEchoUpstream({
+      status: 400,
+      body: { status: 400, error: 'La fecha de fin debe ser posterior a la fecha de inicio' },
+    });
+    const gw = await listenEphemeral(
+      createGateway({
+        empleadosUrl: empleados.url,
+        departamentosUrl: departamentos.url,
+        perfilesUrl: perfiles.url,
+        notificacionesUrl: notificaciones.url,
+        vacacionesUrl: failing.url,
+      }),
+    );
+    try {
+      const res = await fetch(`${gw.url}/vacaciones`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ empleadoId: 'E001', dias: -1 }),
+      });
+      assert.equal(res.status, 400);
+      assert.deepEqual(await res.json(), {
+        status: 400,
+        error: 'La fecha de fin debe ser posterior a la fecha de inicio',
+      });
+    } finally {
+      gw.server.close();
+      failing.server.close();
+    }
+  });
+
+  it('responde 503 con JSON descriptivo si vacaciones no responde', async () => {
+    const res = await fetch(`${gatewayVacacionesDown.url}/vacaciones/E001`);
+    assert.equal(res.status, 503);
+    const body = await res.json();
+    assert.equal(body.status, 503);
+    assert.match(body.error, /vacaciones/i);
   });
 });

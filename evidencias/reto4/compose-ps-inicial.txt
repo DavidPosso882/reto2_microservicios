@@ -1,0 +1,12 @@
+NAME                              IMAGE                          COMMAND                  SERVICE                   CREATED         STATUS                   PORTS
+reto2-api-gateway-1               reto2-api-gateway              "docker-entrypoint.s…"   api-gateway               2 minutes ago   Up 2 minutes (healthy)   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+reto2-database-departamentos-1    postgres:16-alpine             "docker-entrypoint.s…"   database-departamentos    4 hours ago     Up 2 minutes (healthy)   5432/tcp
+reto2-database-empleados-1        postgres:16-alpine             "docker-entrypoint.s…"   database-empleados        4 hours ago     Up 2 minutes (healthy)   5432/tcp
+reto2-database-notificaciones-1   postgres:16-alpine             "docker-entrypoint.s…"   database-notificaciones   2 minutes ago   Up 2 minutes (healthy)   5432/tcp
+reto2-database-perfiles-1         postgres:16-alpine             "docker-entrypoint.s…"   database-perfiles         2 minutes ago   Up 2 minutes (healthy)   5432/tcp
+reto2-database-vacaciones-1       postgres:16-alpine             "docker-entrypoint.s…"   database-vacaciones       2 minutes ago   Up 2 minutes (healthy)   5432/tcp
+reto2-departamentos-service-1     reto2-departamentos-service    "docker-entrypoint.s…"   departamentos-service     4 hours ago     Up 2 minutes (healthy)   8082/tcp
+reto2-empleados-service-1         reto2-empleados-service        "java -jar app.jar"      empleados-service         2 minutes ago   Up 2 minutes (healthy)   8081/tcp
+reto2-message-broker-1            rabbitmq:3-management          "docker-entrypoint.s…"   message-broker            2 minutes ago   Up 2 minutes (healthy)   4369/tcp, 5671/tcp, 0.0.0.0:5672->5672/tcp, [::]:5672->5672/tcp, 15671/tcp, 15691-15692/tcp, 25672/tcp, 0.0.0.0:15672->15672/tcp, [::]:15672->15672/tcp
+reto2-notificaciones-service-1    reto2-notificaciones-service   "uvicorn app.main:ap…"   notificaciones-service    2 minutes ago   Up 2 minutes (healthy)   8084/tcp
+reto2-perfiles-service-1          reto2-perfiles-service         "/app/perfiles-servi…"   perfiles-service          2 minutes ago   Up 2 minutes (healthy)   8083/tcp

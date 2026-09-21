@@ -1,6 +1,7 @@
 package com.empresa.gestionempleados.service;
 
 import com.empresa.gestionempleados.client.DepartamentoClient;
+import com.empresa.gestionempleados.events.EventPublisher;
 import com.empresa.gestionempleados.exception.DepartamentoNoDisponibleException;
 import com.empresa.gestionempleados.exception.DepartamentoNoExisteException;
 import com.empresa.gestionempleados.exception.EmpleadoDuplicadoException;
@@ -50,6 +51,9 @@ class EmpleadoServiceTest {
 
     @MockBean
     private DepartamentoClient departamentoClient;
+
+    @MockBean
+    private EventPublisher eventPublisher;
 
     @BeforeEach
     void setUp() {

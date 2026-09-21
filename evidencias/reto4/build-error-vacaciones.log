@@ -1,0 +1,65 @@
+ Image reto2-vacaciones-service Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 594B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 1.16kB done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/ruby:3.3-slim
+#3 DONE 0.4s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 98B done
+#4 DONE 0.0s
+
+#5 [build 1/5] FROM docker.io/library/ruby:3.3-slim@sha256:379ffc9ca20cae2655cb80cac53ee23e1e7d859c03a4cceb7f567d6ce4873cee
+#5 DONE 0.0s
+
+#6 [stage-1 2/7] RUN apt-get update     && apt-get install -y --no-install-recommends curl libpq5     && rm -rf /var/lib/apt/lists/*
+#6 CACHED
+
+#7 [stage-1 3/7] WORKDIR /app
+#7 CACHED
+
+#8 [internal] load build context
+#8 transferring context: 463B done
+#8 DONE 0.0s
+
+#9 [build 2/5] RUN apt-get update     && apt-get install -y --no-install-recommends build-essential libpq-dev     && rm -rf /var/lib/apt/lists/*
+#9 CACHED
+
+#10 [build 3/5] WORKDIR /app
+#10 CACHED
+
+#11 [build 4/5] COPY Gemfile ./
+#11 CACHED
+
+#12 [build 5/5] RUN bundle config set --local deployment true     && bundle config set --local without 'development test'     && bundle install --jobs 4
+#12 0.554 The deployment setting requires a lockfile. Please make sure you have checked
+#12 0.554 your Gemfile.lock into version control before deploying.
+#12 ERROR: process "/bin/sh -c bundle config set --local deployment true     && bundle config set --local without 'development test'     && bundle install --jobs 4" did not complete successfully: exit code: 16
+------
+ > [build 5/5] RUN bundle config set --local deployment true     && bundle config set --local without 'development test'     && bundle install --jobs 4:
+0.554 The deployment setting requires a lockfile. Please make sure you have checked
+0.554 your Gemfile.lock into version control before deploying.
+------
+Dockerfile:10
+
+--------------------
+
+   9 |     COPY Gemfile ./
+
+  10 | >>> RUN bundle config set --local deployment true \
+
+  11 | >>>     && bundle config set --local without 'development test' \
+
+  12 | >>>     && bundle install --jobs 4
+
+  13 |     
+
+--------------------
+
+failed to solve: process "/bin/sh -c bundle config set --local deployment true     && bundle config set --local without 'development test'     && bundle install --jobs 4" did not complete successfully: exit code: 16
+

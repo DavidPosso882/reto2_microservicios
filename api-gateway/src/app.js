@@ -11,6 +11,9 @@ import { createProxyMiddleware } from 'http-proxy-middleware';
  * Routing:
  *   /empleados*      -> empleados-service
  *   /departamentos*  -> departamentos-service
+ *   /perfiles*       -> perfiles-service (Reto 4)
+ *   /notificaciones* -> notificaciones-service (Reto 4)
+ *   /vacaciones*     -> vacaciones-service (Reto 4)
  *
  * Upstream URLs are injected so tests can point at fake servers while
  * production (docker-compose) points at the Docker service names.
@@ -18,9 +21,18 @@ import { createProxyMiddleware } from 'http-proxy-middleware';
  * @param {object} opts
  * @param {string} opts.empleadosUrl - base URL of empleados-service (no trailing path).
  * @param {string} opts.departamentosUrl - base URL of departamentos-service (no trailing path).
+ * @param {string} opts.perfilesUrl - base URL of perfiles-service (no trailing path).
+ * @param {string} opts.notificacionesUrl - base URL of notificaciones-service (no trailing path).
+ * @param {string} opts.vacacionesUrl - base URL of vacaciones-service (no trailing path).
  * @returns {import('express').Express}
  */
-export function createGateway({ empleadosUrl, departamentosUrl }) {
+export function createGateway({
+  empleadosUrl,
+  departamentosUrl,
+  perfilesUrl,
+  notificacionesUrl,
+  vacacionesUrl,
+}) {
   const app = express();
 
   // Own health check: proves the edge itself is alive, independently of upstreams.
@@ -46,7 +58,13 @@ export function createGateway({ empleadosUrl, departamentosUrl }) {
     // Express strips the mount prefix before the middleware runs, so the
     // upstream would receive '/E001' instead of '/empleados/E001'.
     // Re-attach it: internal routes stay exactly as in Reto 2.
-    pathRewrite: (path) => (path === '/' ? `/${prefijo}` : `/${prefijo}${path}`),
+    // Covers both the bare prefix ('/' after mount) and the prefix with a
+    // query string but no subpath ('/?query' after mount).
+    pathRewrite: (path) => {
+      if (path === '/') return `/${prefijo}`;
+      if (path.startsWith('/?')) return `/${prefijo}${path.slice(1)}`;
+      return `/${prefijo}${path}`;
+    },
     // Must outlive empleados worst case (retries + backoff before its fallback, ~15s).
     proxyTimeout: 30000,
     timeout: 30000,
@@ -63,6 +81,12 @@ export function createGateway({ empleadosUrl, departamentosUrl }) {
     '/departamentos',
     createProxyMiddleware(proxyOptions(departamentosUrl, 'departamentos', 'departamentos')),
   );
+  app.use('/perfiles', createProxyMiddleware(proxyOptions(perfilesUrl, 'perfiles', 'perfiles')));
+  app.use(
+    '/notificaciones',
+    createProxyMiddleware(proxyOptions(notificacionesUrl, 'notificaciones', 'notificaciones')),
+  );
+  app.use('/vacaciones', createProxyMiddleware(proxyOptions(vacacionesUrl, 'vacaciones', 'vacaciones')));
 
   // Unknown routes -> 404 envelope (same contract as the business services).
   app.use((req, res) => {

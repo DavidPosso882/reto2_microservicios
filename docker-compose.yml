@@ -70,16 +70,181 @@ services:
       DB_USER: ${DB_EMPLEADOS_USER:-postgres}
       DB_PASSWORD: ${DB_EMPLEADOS_PASSWORD:-postgres}
       DEPARTAMENTOS_URL: http://departamentos-service:8082
+      SPRING_RABBITMQ_HOST: message-broker
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-admin}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin}
     depends_on:
       database-empleados:
         condition: service_healthy
       departamentos-service:
         condition: service_started
+      message-broker:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8081/empleados"]
       interval: 10s
       timeout: 3s
       retries: 5
+      start_period: 30s
+    networks:
+      - microservices-network
+
+  database-notificaciones:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_NOTIFICACIONES_NAME:-notificaciones}
+      POSTGRES_USER: ${DB_NOTIFICACIONES_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_NOTIFICACIONES_PASSWORD:-postgres}
+    volumes:
+      - vol-notificaciones:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_NOTIFICACIONES_USER:-postgres} -d ${DB_NOTIFICACIONES_NAME:-notificaciones}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - microservices-network
+
+  notificaciones-service:
+    build: ./notificaciones
+    expose:
+      - "8084"   # visible solo dentro de la red de Docker (Reto 3: borde único)
+    environment:
+      PORT: 8084
+      DB_HOST: database-notificaciones
+      DB_PORT: 5432
+      DB_NAME: ${DB_NOTIFICACIONES_NAME:-notificaciones}
+      DB_USER: ${DB_NOTIFICACIONES_USER:-postgres}
+      DB_PASSWORD: ${DB_NOTIFICACIONES_PASSWORD:-postgres}
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin}
+    depends_on:
+      database-notificaciones:
+        condition: service_healthy
+      message-broker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8084/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - microservices-network
+
+  database-perfiles:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_PERFILES_NAME:-perfiles}
+      POSTGRES_USER: ${DB_PERFILES_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PERFILES_PASSWORD:-postgres}
+    volumes:
+      - vol-perfiles:/var/lib/postgresql/data
+      - ./perfiles/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_PERFILES_USER:-postgres} -d ${DB_PERFILES_NAME:-perfiles}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - microservices-network
+
+  perfiles-service:
+    build: ./perfiles
+    expose:
+      - "8083"   # visible solo dentro de la red de Docker (Reto 3: borde único)
+    environment:
+      PORT: 8083
+      DB_HOST: database-perfiles
+      DB_PORT: 5432
+      DB_NAME: ${DB_PERFILES_NAME:-perfiles}
+      DB_USER: ${DB_PERFILES_USER:-postgres}
+      DB_PASSWORD: ${DB_PERFILES_PASSWORD:-postgres}
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin}
+    depends_on:
+      database-perfiles:
+        condition: service_healthy
+      message-broker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8083/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - microservices-network
+
+  database-vacaciones:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_VACACIONES_NAME:-vacaciones}
+      POSTGRES_USER: ${DB_VACACIONES_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_VACACIONES_PASSWORD:-postgres}
+    volumes:
+      - vol-vacaciones:/var/lib/postgresql/data
+      - ./vacaciones/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_VACACIONES_USER:-postgres} -d ${DB_VACACIONES_NAME:-vacaciones}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - microservices-network
+
+  vacaciones-service:
+    build: ./vacaciones
+    expose:
+      - "8085"   # visible solo dentro de la red de Docker (Reto 3: borde único)
+    environment:
+      PORT: 8085
+      DB_HOST: database-vacaciones
+      DB_PORT: 5432
+      DB_NAME: ${DB_VACACIONES_NAME:-vacaciones}
+      DB_USER: ${DB_VACACIONES_USER:-postgres}
+      DB_PASSWORD: ${DB_VACACIONES_PASSWORD:-postgres}
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin}
+    depends_on:
+      database-vacaciones:
+        condition: service_healthy
+      message-broker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8085/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - microservices-network
+
+  # ── Mensajería asincrónica (Reto 4): eventos del ecosistema ──
+  message-broker:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"     # AMQP: productores y consumidores
+      - "15672:15672"   # Management UI: http://localhost:15672
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-admin}
+    volumes:
+      - vol-rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
       start_period: 30s
     networks:
       - microservices-network
@@ -93,10 +258,19 @@ services:
       PORT: 8080
       EMPLEADOS_URL: http://empleados-service:8081
       DEPARTAMENTOS_URL: http://departamentos-service:8082
+      PERFILES_URL: http://perfiles-service:8083
+      NOTIFICACIONES_URL: http://notificaciones-service:8084
+      VACACIONES_URL: http://vacaciones-service:8085
     depends_on:
       empleados-service:
         condition: service_started
       departamentos-service:
+        condition: service_started
+      perfiles-service:
+        condition: service_started
+      notificaciones-service:
+        condition: service_started
+      vacaciones-service:
         condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/health"]
@@ -114,3 +288,7 @@ networks:
 volumes:
   vol-empleados:
   vol-departamentos:
+  vol-notificaciones:
+  vol-perfiles:
+  vol-vacaciones:
+  vol-rabbitmq:

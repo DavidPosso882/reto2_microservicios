@@ -1,0 +1,12 @@
+reto2-api-gateway-1	Up 7 minutes (healthy)
+reto2-database-departamentos-1	Up 7 minutes (healthy)
+reto2-database-empleados-1	Up 7 minutes (healthy)
+reto2-database-notificaciones-1	Up 7 minutes (healthy)
+reto2-database-perfiles-1	Up 7 minutes (healthy)
+reto2-database-vacaciones-1	Up 7 minutes (healthy)
+reto2-departamentos-service-1	Up 7 minutes (healthy)
+reto2-empleados-service-1	Up 7 minutes (healthy)
+reto2-message-broker-1	Up 7 minutes (healthy)
+reto2-notificaciones-service-1	Up 2 minutes (healthy)
+reto2-perfiles-service-1	Up 28 seconds (healthy)
+reto2-vacaciones-service-1	Exited (1) 7 minutes ago

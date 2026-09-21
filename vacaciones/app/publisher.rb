@@ -1,0 +1,84 @@
+# frozen_string_literal: true
+
+require 'json'
+require 'securerandom'
+require 'time'
+
+module Vacaciones
+  # Publisher for `vacaciones.programadas` (CATALOGO_EVENTOS.md section 3.8).
+  # Publish failure is logged and swallowed: the DB write is NOT rolled back.
+  class Publisher
+    EXCHANGE = 'ecosistema.eventos'
+    ROUTING_KEY = 'vacaciones.programadas'
+    VERSION = '1.0'
+    PRODUCER = 'vacaciones-service'
+
+    def initialize(config, logger)
+      @config = config
+      @logger = logger
+      @exchange = nil
+      @mutex = Mutex.new
+    end
+
+    def publish_vacaciones_programadas(periodo, empleado_email, now_provider: -> { Time.now.utc })
+      event = {
+        'id' => SecureRandom.uuid,
+        'type' => ROUTING_KEY,
+        'version' => VERSION,
+        'occurredAt' => now_provider.call.iso8601,
+        'producer' => PRODUCER,
+        'data' => {
+          'id' => periodo['id'],
+          'empleadoId' => periodo['empleadoId'],
+          'empleadoEmail' => empleado_email,
+          'fechaInicio' => periodo['fechaInicio'],
+          'fechaFin' => periodo['fechaFin'],
+          'estado' => periodo['estado'],
+          'fechaCreacion' => periodo['fechaCreacion']
+        }
+      }
+      publish(ROUTING_KEY, JSON.generate(event))
+    end
+
+    def publish(routing_key, payload)
+      exchange.publish(payload, routing_key: routing_key, persistent: true, content_type: 'application/json')
+      true
+    rescue StandardError => e
+      @logger.error("[publisher] fallo publicando '#{routing_key}' (sin rollback de BD): #{e.class}: #{e.message}")
+      false
+    end
+
+    def close
+      @mutex.synchronize do
+        begin
+          @connection&.close
+        rescue StandardError
+          nil
+        end
+        @connection = nil
+        @exchange = nil
+      end
+    end
+
+    private
+
+    # Lazily declares the durable topic exchange on first use and reuses it.
+    def exchange
+      @mutex.synchronize do
+        @exchange ||= begin
+          require 'bunny'
+          @connection = Bunny.new(
+            host: @config.rabbitmq_host,
+            port: @config.rabbitmq_port,
+            user: @config.rabbitmq_user,
+            password: @config.rabbitmq_password,
+            automatically_recover: true
+          )
+          @connection.start
+          channel = @connection.create_channel
+          channel.topic(EXCHANGE, durable: true)
+        end
+      end
+    end
+  end
+end
