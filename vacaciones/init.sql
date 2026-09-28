@@ -8,11 +8,12 @@ CREATE TABLE IF NOT EXISTS vacaciones (
 	empleado_id TEXT NOT NULL,
 	fecha_inicio DATE NOT NULL,
 	fecha_fin DATE NOT NULL,
-	estado TEXT NOT NULL,               -- PROGRAMADA | CANCELADA (Reto 4)
+	estado TEXT NOT NULL,               -- PROGRAMADA | EN_CURSO | FINALIZADA | CANCELADA (Reto 5)
 	fecha_creacion TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_vacaciones_empleado ON vacaciones (empleado_id);
+CREATE INDEX IF NOT EXISTS idx_vacaciones_estado ON vacaciones (estado);
 
 -- Réplica local de empleados (opción b: validación por eventos, sin REST saliente).
 CREATE TABLE IF NOT EXISTS empleados_locales (

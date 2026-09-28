@@ -10,6 +10,9 @@ const departamentosUrl = process.env.DEPARTAMENTOS_URL || 'http://departamentos-
 const perfilesUrl = process.env.PERFILES_URL || 'http://perfiles-service:8083';
 const notificacionesUrl = process.env.NOTIFICACIONES_URL || 'http://notificaciones-service:8084';
 const vacacionesUrl = process.env.VACACIONES_URL || 'http://vacaciones-service:8085';
+// Reto 5: auth-service queda dentro de la red de Docker (:8086, sin puerto
+// publicado al host); el gateway monta /auth contra él.
+const authUrl = process.env.AUTH_URL || 'http://auth-service:8086';
 
 const app = createGateway({
   empleadosUrl,
@@ -17,6 +20,7 @@ const app = createGateway({
   perfilesUrl,
   notificacionesUrl,
   vacacionesUrl,
+  authUrl,
 });
 
 app.listen(port, () => {

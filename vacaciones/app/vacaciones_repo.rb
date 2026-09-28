@@ -81,6 +81,65 @@ module Vacaciones
       row.ntuples.zero? ? nil : from_row(row[0])
     end
 
+    # ── Reto 5: scheduler del ciclo de vida ──
+
+    # Candidates to start: PROGRAMADA with fechaInicio <= today.
+    def por_iniciar(hoy)
+      rows = connection.exec_params(
+        <<~SQL,
+          SELECT * FROM vacaciones
+          WHERE estado = 'PROGRAMADA' AND fecha_inicio <= $1::date
+          ORDER BY fecha_inicio
+        SQL
+        [hoy.iso8601]
+      )
+      rows.map { |r| from_row(r) }
+    end
+
+    # Candidates to finish: EN_CURSO with fechaFin <= today (inclusive: the
+    # demo strategy fechaInicio=hoy/fechaFin=hoy must complete the same day).
+    def por_finalizar(hoy)
+      rows = connection.exec_params(
+        <<~SQL,
+          SELECT * FROM vacaciones
+          WHERE estado = 'EN_CURSO' AND fecha_fin <= $1::date
+          ORDER BY fecha_fin
+        SQL
+        [hoy.iso8601]
+      )
+      rows.map { |r| from_row(r) }
+    end
+
+    # Conditional transition PROGRAMADA -> EN_CURSO. The WHERE clause on the
+    # expected state makes the UPDATE idempotent: it only fires if the row is
+    # still PROGRAMADA, so repeated ticks or racing instances cannot move a
+    # CANCELADA/FINALIZADA row (or double-publish). Returns the updated period
+    # or nil when zero rows matched.
+    def marcar_en_curso(id)
+      row = connection.exec_params(
+        <<~SQL,
+          UPDATE vacaciones SET estado = 'EN_CURSO'
+          WHERE id = $1 AND estado = 'PROGRAMADA'
+          RETURNING *
+        SQL
+        [id]
+      )
+      row.ntuples.zero? ? nil : from_row(row[0])
+    end
+
+    # Conditional transition EN_CURSO -> FINALIZADA (same idempotency rule).
+    def marcar_finalizada(id)
+      row = connection.exec_params(
+        <<~SQL,
+          UPDATE vacaciones SET estado = 'FINALIZADA'
+          WHERE id = $1 AND estado = 'EN_CURSO'
+          RETURNING *
+        SQL
+        [id]
+      )
+      row.ntuples.zero? ? nil : from_row(row[0])
+    end
+
     def from_row(row)
       {
         'id' => row['id'],

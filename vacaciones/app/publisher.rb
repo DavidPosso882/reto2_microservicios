@@ -5,11 +5,14 @@ require 'securerandom'
 require 'time'
 
 module Vacaciones
-  # Publisher for `vacaciones.programadas` (CATALOGO_EVENTOS.md section 3.8).
+  # Publisher for `vacaciones.programadas` and (Reto 5) the lifecycle events
+  # `vacaciones.iniciadas` / `vacaciones.finalizadas` (extensión del catálogo 3.8).
   # Publish failure is logged and swallowed: the DB write is NOT rolled back.
   class Publisher
     EXCHANGE = 'ecosistema.eventos'
     ROUTING_KEY = 'vacaciones.programadas'
+    ROUTING_KEY_INICIADAS = 'vacaciones.iniciadas'
+    ROUTING_KEY_FINALIZADAS = 'vacaciones.finalizadas'
     VERSION = '1.0'
     PRODUCER = 'vacaciones-service'
 
@@ -21,23 +24,20 @@ module Vacaciones
     end
 
     def publish_vacaciones_programadas(periodo, empleado_email, now_provider: -> { Time.now.utc })
-      event = {
-        'id' => SecureRandom.uuid,
-        'type' => ROUTING_KEY,
-        'version' => VERSION,
-        'occurredAt' => now_provider.call.iso8601,
-        'producer' => PRODUCER,
-        'data' => {
-          'id' => periodo['id'],
-          'empleadoId' => periodo['empleadoId'],
-          'empleadoEmail' => empleado_email,
-          'fechaInicio' => periodo['fechaInicio'],
-          'fechaFin' => periodo['fechaFin'],
-          'estado' => periodo['estado'],
-          'fechaCreacion' => periodo['fechaCreacion']
-        }
-      }
-      publish(ROUTING_KEY, JSON.generate(event))
+      evento = envelope('vacaciones.programadas', periodo, empleado_email, now_provider)
+      publish(ROUTING_KEY, JSON.generate(evento))
+    end
+
+    # Reto 5: vacaciones.iniciadas — un período PROGRAMADA pasa a EN_CURSO.
+    def publish_vacaciones_iniciadas(periodo, empleado_email, now_provider: -> { Time.now.utc })
+      evento = envelope('vacaciones.iniciadas', periodo, empleado_email, now_provider)
+      publish(ROUTING_KEY_INICIADAS, JSON.generate(evento))
+    end
+
+    # Reto 5: vacaciones.finalizadas — un período EN_CURSO pasa a FINALIZADA.
+    def publish_vacaciones_finalizadas(periodo, empleado_email, now_provider: -> { Time.now.utc })
+      evento = envelope('vacaciones.finalizadas', periodo, empleado_email, now_provider)
+      publish(ROUTING_KEY_FINALIZADAS, JSON.generate(evento))
     end
 
     def publish(routing_key, payload)
@@ -61,6 +61,27 @@ module Vacaciones
     end
 
     private
+
+    # Shared envelope (formato catálogo §1): {id uuid, type, version 1.0,
+    # occurredAt UTC ISO, producer vacaciones-service, data {...}}.
+    def envelope(type, periodo, empleado_email, now_provider)
+      {
+        'id' => SecureRandom.uuid,
+        'type' => type,
+        'version' => VERSION,
+        'occurredAt' => now_provider.call.iso8601,
+        'producer' => PRODUCER,
+        'data' => {
+          'id' => periodo['id'],
+          'empleadoId' => periodo['empleadoId'],
+          'empleadoEmail' => empleado_email,
+          'fechaInicio' => periodo['fechaInicio'],
+          'fechaFin' => periodo['fechaFin'],
+          'estado' => periodo['estado'],
+          'fechaCreacion' => periodo['fechaCreacion']
+        }
+      }
+    end
 
     # Lazily declares the durable topic exchange on first use and reuses it.
     def exchange

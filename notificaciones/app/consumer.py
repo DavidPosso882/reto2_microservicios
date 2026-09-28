@@ -1,7 +1,8 @@
 """RabbitMQ consumer for the ecosystem event catalog (CATALOGO_EVENTOS.md).
 
 Declares the durable topic exchange `ecosistema.eventos`, the durable queue
-`q.notificaciones`, binds the three routing keys this service consumes, and
+`q.notificaciones`, binds the nine routing keys this service consumes (the
+original three plus the Reto 5 account-lifecycle and scheduler events), and
 ACKs manually only after the effect (notification + dedup ledger row) is
 persisted. Startup tolerates a broker that is not ready yet by retrying with
 exponential backoff instead of dying.
@@ -20,17 +21,21 @@ from sqlalchemy.exc import IntegrityError
 from app.config import settings
 from app.db import SessionLocal
 from app.models import EventoProcesado
-from app.mensajes import TipoEventoDesconocido, construir_notificacion, log_envio
+from app.mensajes import (
+    TIPOS_VALIDOS,
+    TipoEventoDesconocido,
+    construir_notificacion,
+    log_envio,
+)
 
 logger = logging.getLogger("notificaciones.consumer")
 
 EXCHANGE = "ecosistema.eventos"
 QUEUE = "q.notificaciones"
-ROUTING_KEYS = (
-    "empleado.creado",
-    "empleado.retirado",
-    "vacaciones.programadas",
-)
+# Single source of truth: the queue binds exactly the event types the mapping
+# supports (3 original + 6 new in Reto 5). Unknown types reaching the queue
+# are still discarded with ACK (poison handling).
+ROUTING_KEYS = TIPOS_VALIDOS
 
 # Broker availability retry (exponential backoff, capped)
 REINTENTOS_MAX = 12

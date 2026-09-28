@@ -2,9 +2,13 @@ openapi: 3.0.3
 info:
   title: vacaciones-service
   description: |
-    Servicio productor del ecosistema (Reto 4 - comunicación asincrónica).
+    Servidor productor del ecosistema (Reto 4 - comunicación asincrónica; ciclo
+    de vida extendido en Reto 5).
     Expone REST para gestionar períodos de vacaciones y publica el evento
     `vacaciones.programadas` (catálogo 3.8) tras cada programación exitosa.
+    Un scheduler interno aplica el ciclo de vida `PROGRAMADA → EN_CURSO →
+    FINALIZADA` por fecha y publica `vacaciones.iniciadas` y
+    `vacaciones.finalizadas` (catálogo 3.8 extendido, Reto 5).
 
     Valida al empleado contra una **réplica local** alimentada por eventos:
     consume `empleado.creado` y `empleado.retirado` (catálogos 3.1 y 3.3) del
@@ -91,7 +95,8 @@ paths:
       description: |
         El `id` lo genera el servidor (`V-AAAA-NNNN`, año actual + secuencial
         de 4 dígitos resuelto con MAX+1 en transacción). Valida:
-        1. `fechaFin` posterior a `fechaInicio`.
+        1. `fechaFin` no anterior a `fechaInicio` (períodos de un solo día
+           permitidos: demo Reto 5 `fechaInicio=hoy/fechaFin=hoy`).
         2. `fechaInicio` no anterior a hoy (fecha del servidor).
         3. Sin solapamiento (rango inclusivo) con otro período del mismo
            empleado en `PROGRAMADA` o `EN_CURSO`; en conflicto la respuesta
@@ -144,7 +149,11 @@ paths:
       description: |
         Si aún no inició (`hoy < fechaInicio`) pasa a `CANCELADA` y devuelve el
         período con 200. Si ya inició responde 400; si no existe, 404.
-        En este reto solo existen los estados `PROGRAMADA` y `CANCELADA`.
+        Estados (Reto 5): `PROGRAMADA | EN_CURSO | FINALIZADA | CANCELADA`;
+        el scheduler del servicio mueve automáticamente `PROGRAMADA →
+        EN_CURSO` (fechaInicio <= hoy) y `EN_CURSO → FINALIZADA`
+        (fechaFin <= hoy), publicando `vacaciones.iniciadas` /
+        `vacaciones.finalizadas`.
       operationId: deleteVacacion
       parameters:
         - $ref: "#/components/parameters/IdVacaciones"
@@ -214,7 +223,7 @@ components:
           example: "2026-12-30"
         estado:
           type: string
-          enum: [PROGRAMADA, CANCELADA]
+          enum: [PROGRAMADA, EN_CURSO, FINALIZADA, CANCELADA]
           example: PROGRAMADA
         fechaCreacion:
           type: string

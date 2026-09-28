@@ -1,3 +1,111 @@
+# Reto 5 — Seguridad y Control de Acceso con JWT (evolución del Reto 4)
+
+Evolución del Reto 4 (comunicación asincrónica por eventos): el sistema suma
+**autenticación y autorización con JWT**. El `api-gateway` valida el token en el único
+borde HTTP; los 5 servicios de negocio pasan de públicos a protegidos sin código JWT
+propio; entra en vigor RBAC; el nuevo `auth-service` conduce el ciclo de vida de
+cuentas. Demo end-to-end: [`GUIA_PRUEBAS_RETO5.md`](GUIA_PRUEBAS_RETO5.md).
+
+**URL base vigente: `http://localhost:8080`** (única publicada al host, como en Reto 3).
+
+## 1. Arquitectura (14 contenedores)
+
+| Servicio | Lenguaje | Puerto interno | Puerto host |
+|---|---|---|---|
+| api-gateway | Node.js 22 + Express 4 | 8080 | **8080 (el único HTTP)** |
+| auth-service (nuevo) | Node.js 22 + Express 4 | 8086 | ninguno (`expose`) |
+| empleados-service | Java 21 + Spring Boot 3 | 8081 | ninguno |
+| departamentos-service | Node.js 22 + Express 4 | 8082 | ninguno |
+| perfiles-service | Python + FastAPI | 8083 | ninguno |
+| notificaciones-service | Python + FastAPI (9 claves de entorno) | 8084 | ninguno |
+| vacaciones-service | Ruby + Sinatra (scheduler integrado) | 8085 | ninguno |
+| databases + `database-auth` (nueva, BD `auth_db`) | postgres:16-alpine | 5432 | ninguno |
+| message-broker | RabbitMQ 3 + management | 5672 / 15672 | **5672 y 15672** |
+
+14 en total: gateway + auth + 5 servicios de negocio + 6 postgres + rabbitmq. Solo
+`:8080` como borde HTTP al host; 5672 (AMQP) y 15672 (UI) son exclusivos del broker.
+
+## 2. Rutas del Gateway: nuevas de auth; negocio ahora protegido
+
+| Ruta | Acceso | Destino |
+|---|---|---|
+| `POST /auth/bootstrap` | pública (solo si aún no hay ADMIN) | auth-service |
+| `POST /auth/login` | pública | auth-service |
+| `POST /auth/recover-password` | pública | auth-service |
+| `POST /auth/reset-password` | pública (token de un uso) | auth-service |
+| `POST /auth/change-password` | protegida (propio usuario) | auth-service |
+| `GET/POST /empleados`, `/empleados/*` | **protegida** | :8081 |
+| `GET/POST /departamentos`, `/departamentos/*` | **protegida** | :8082 |
+| `GET/POST /perfiles`, `/perfiles/*` | **protegida** (propiedad en `PUT /perfiles/{id}`) | :8083 |
+| `GET /notificaciones`, `/notificaciones/*` | **protegida** | :8084 |
+| `GET/POST /vacaciones`, `/vacaciones/*` | **protegida** | :8085 |
+| `GET /health` | pública | gateway |
+
+Las 5 rutas de negocio del Reto 3 se enrutan igual; solo pasan de públicas a protegidas (`503`/`404` intactos).
+
+## 3. Variables de entorno nuevas
+
+| Variable | Dónde | Nota |
+|---|---|---|
+| `JWT_SECRET` | auth-service **y** api-gateway (misma clave) | obligatoria y fail-fast: si falta, compose aborta; generar con `openssl rand -hex 32` en `.env` |
+| `AUTH_URL` | api-gateway | `http://auth-service:8086` |
+| `SCHEDULER_INTERVAL_S` | vacaciones-service | segundos entre corridas del scheduler (default `60` = 1 minuto) |
+| `NOTIFICACIONES_ROOT_PATH` | notificaciones-service | root_path ASGI tras el strip del gateway (default `/notificaciones`) |
+
+## 4. Cómo obtener un token
+
+```bash
+# una sola vez: crea el primer ADMIN
+curl -X POST http://localhost:8080/auth/bootstrap -H 'Content-Type: application/json' \
+  -d '{"email":"admin@empresa.com","password":"Admin123!"}'
+
+# login (emitir/renovar JWT)
+ADMIN_TOKEN=$(curl -s -X POST http://localhost:8080/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"admin@empresa.com","password":"Admin123!"}' | jq -r .token)
+
+# usar el token en negocios
+curl http://localhost:8080/empleados -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+Sin token: `401 {"error":"Token faltante o inválido"}`. Sin permiso: `403 {"error":"No tiene permisos para esta operación"}`.
+
+## 5. Estrategia de validación: solo el gateway (una vez)
+
+El gateway valida firma y expiración del JWT **una única vez** en el borde, sin
+duplicar la misma lógica JWT en 4 lenguajes; prepara el Reto 10 (JWKS asimétrico).
+
+## 6. RBAC + reglas de propiedad
+
+| Rol | Alcance |
+|---|---|
+| ADMIN | todo: gestión de todos los recursos, bootstrap, consultas globales (vacaciones, notificaciones, departamentos) |
+| USER | `GET` de recursos + `PUT /perfiles/{id}` **solo si es el propio** + `POST /auth/change-password` **solo para sí mismo** |
+
+`403` cuando el rol no alcanza o la propiedad falla; se compara el `userId` del JWT con
+el recurso pedido.
+
+## 7. Scheduler del ciclo de vida (vacaciones-service)
+
+Cada `SCHEDULER_INTERVAL_S` segundos (default `60`, 1 minuto): `PROGRAMADA → EN_CURSO`
+cuando `fechaInicio <= hoy`; `EN_CURSO → FINALIZADA` cuando `fechaFin <= hoy` (fin
+**inclusivo**). Demo: período `hoy–hoy` se inicia y termina con 2 corridas. Idempotente:
+`UPDATE ... WHERE <estado previo> ... RETURNING id` (eventos solo por filas cambiadas).
+Limitación: con **N instancias** habría eventos duplicados → se propone **ShedLock** (Reto 31).
+
+## 8. Ciclo de vida de la cuenta (vista por eventos)
+
+```text
+empleado.creado ─► auth consume ─► usuario.creado (inactivo)
+                 └─► recover/reset (token de un uso) ─► reset-password ─► activo
+login (JWT) ─► uso de negocios protegidos
+vacaciones.iniciadas ─► cuenta.desactivada
+vacaciones.finalizadas ─► cuenta.activada
+empleado.retirado ─► cuenta.desactivada (PERMANENTE)
+EDGE: la cuenta retirada NO se reactiva (ni por login, ni por reset, ni re-contratación).
+```
+
+---
+
 # Reto 3 — API Gateway y Resiliencia Sincrónica
 
 Evolución del sistema del Reto 2 (empleados + departamentos con persistencia):

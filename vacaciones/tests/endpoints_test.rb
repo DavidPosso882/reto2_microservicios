@@ -137,6 +137,17 @@ class EndpointsTest < Minitest::Test
     assert_equal 404, body['status']
   end
 
+  def test_create_acepta_periodo_de_un_dia_hoy_hoy_para_demo
+    # Estrategia de demo del Reto 5: fechaInicio=hoy/fechaFin=hoy → 201.
+    status, body = @endpoints.create(
+      { 'empleadoId' => 'E001', 'fechaInicio' => '2026-09-21', 'fechaFin' => '2026-09-21' }
+    )
+    assert_equal 201, status
+    assert_equal 'V-2026-0001', body['id']
+    assert_equal '2026-09-21', body['fechaFin']
+    assert_equal 1, @publisher.publicaciones.size
+  end
+
   private
 
   def rebuild_endpoints

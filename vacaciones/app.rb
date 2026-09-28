@@ -13,6 +13,7 @@ require_relative 'app/id_generator'
 require_relative 'app/validations'
 require_relative 'app/empleados_locales_repo'
 require_relative 'app/vacaciones_repo'
+require_relative 'app/scheduler'
 require_relative 'app/publisher'
 require_relative 'app/empleados_consumer'
 require_relative 'app/endpoints'
@@ -146,6 +147,7 @@ module Vacaciones
       validations = Validations.new(empleados_repo, vacaciones_repo)
       publisher = Publisher.new(config, logger)
       consumer = EmpleadosConsumer.new(db, empleados_repo, logger, config)
+      scheduler = Scheduler.new(vacaciones_repo, publisher, empleados_repo, logger, config.scheduler_interval_s)
       endpoints = Endpoints.new(
         empleados_repo: empleados_repo,
         vacaciones_repo: vacaciones_repo,
@@ -160,12 +162,20 @@ module Vacaciones
       App.set :endpoints, endpoints
       App.set :logger, logger
 
-      [App, consumer, logger, config]
+      [App, consumer, scheduler, logger, config]
     end
 
     def self.run!
-      app, consumer, logger, config = build
+      app, consumer, scheduler, logger, config = build
       Thread.new { consumer.run }
+      Thread.new { scheduler.run }
+      # Graceful stop: cooperative flags end both loops after the current
+      # tick/delivery (consumer may still be blocked in subscribe until a
+      # message arrives; process exit closes the broker connections).
+      at_exit do
+        consumer.stop!
+        scheduler.stop!
+      end
       # Rack 3 removed Rack::Handler; puma registers Rackup::Handler::Puma
       # (the rackup gem must be loaded before rack/handler/puma).
       Rackup::Handler::Puma.run(app, Port: config.port, Host: '0.0.0.0')

@@ -1,4 +1,4 @@
-# notificaciones-service (Reto 4)
+# notificaciones-service (Reto 4 + Reto 5)
 
 Servicio **puramente reactivo**: consume eventos de RabbitMQ, simula el envío de
 notificaciones y expone su historial **solo en lectura**. No hace llamadas REST
@@ -15,11 +15,25 @@ salientes.
 | `empleado.creado` | `BIENVENIDA` (destinatario `data.email`) |
 | `empleado.retirado` | `DESVINCULACION` |
 | `vacaciones.programadas` | `VACACIONES` (mensaje con `fechaInicio`→`fechaFin`) |
+| `usuario.creado` *(Reto 5, auth-service)* | `SEGURIDAD` (mensaje con reset token, vencimiento 30min) |
+| `usuario.recuperacion` *(Reto 5, auth-service)* | `SEGURIDAD` (reset token + expiración) |
+| `cuenta.desactivada` *(Reto 5, auth-service)* | `CUENTA` ("Su cuenta fue desactivada…", motivo) |
+| `cuenta.activada` *(Reto 5, auth-service)* | `CUENTA` ("Su cuenta fue reactivada. ¡Bienvenido de regreso!") |
+| `vacaciones.iniciadas` *(Reto 5, scheduler vacaciones)* | `VACACIONES` (período en curso) |
+| `vacaciones.finalizadas` *(Reto 5, scheduler vacaciones)* | `VACACIONES` (período finalizado) |
+
+Log de envío simulado, formato del PDF:
+`[NOTIFICACIÓN] Tipo: BIENVENIDA|DESVINCULACION|VACACIONES|SEGURIDAD|CUENTA | Para: <email> | Mensaje: "..."`.
+Los eventos de cuenta nunca incluyen contraseñas: el único dato sensible es el
+reset token (JWT de un solo uso, vida corta), que el flujo del PDF pide
+mostrar en el mensaje.
 
 Cola durable `q.notificaciones`, exchange topic durable `ecosistema.eventos`,
-ACK manual **después** de persistir (notificación + dedup en `eventos_procesados`).
-Si el broker no está disponible al arrancar, reintenta con backoff exponencial
-sin morir.
+bindings = los 9 routing keys de la tabla (fuente única: `TIPOS_VALIDOS` en
+`app/mensajes.py`), ACK manual **después** de persistir (notificación + dedup
+en `eventos_procesados`). Tipos desconocidos o payload inválido se descartan
+con ACK (poison, no bloquean la cola). Si el broker no está disponible al
+arrancar, reintenta con backoff exponencial sin morir.
 
 ## Endpoints (solo lectura)
 
@@ -39,6 +53,7 @@ Respuesta camelCase: `id, tipo, destinatario, mensaje, fechaEnvio, empleadoId`.
 | `RABBITMQ_HOST` / `RABBITMQ_PORT` | `localhost` / `5672` |
 | `RABBITMQ_USER` / `RABBITMQ_PASSWORD` | `guest` / `guest` |
 | `CONSUMER_ENABLED` | `true` |
+| `NOTIFICACIONES_ROOT_PATH` | `/notificaciones` (root_path ASGI tras el gateway; override para entornos sin strip, como tests) |
 
 En `docker-compose.yml` se sobrescriben con los valores del ecosistema
 (`RABBITMQ_HOST=message-broker`, credenciales `${RABBITMQ_USER:-admin}`).

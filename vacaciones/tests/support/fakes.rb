@@ -87,13 +87,14 @@ class FakeEmpleadosRepo
 end
 
 class FakeVacacionesRepo
-  attr_reader :guardados, :canceladas, :solapamiento_consultas
+  attr_reader :guardados, :canceladas, :solapamiento_consultas, :transiciones
 
   def initialize(periodos = [])
     @periodos = periodos
     @guardados = []
     @canceladas = []
     @solapamiento_consultas = []
+    @transiciones = []
     @seq = 0
   end
 
@@ -133,19 +134,67 @@ class FakeVacacionesRepo
     return nil if period.nil? || Date.parse(period['fechaInicio']) <= Date.today
 
     period = period.merge('estado' => 'CANCELADA')
-    idx = @periodos.index { |p| p['id'] == id }
-    @periodos[idx] = period
     @canceladas << period
+    reemplazar(period)
     period
+  end
+
+  # ── Reto 5: superficie usada por el Scheduler ──
+
+  # PROGRAMADA con fechaInicio <= hoy: candidatos a EN_CURSO.
+  def por_iniciar(hoy)
+    @periodos.select { |p| p['estado'] == 'PROGRAMADA' && Date.parse(p['fechaInicio']) <= hoy }
+  end
+
+  # EN_CURSO con fechaFin <= hoy: candidatos a FINALIZADA (inclusivo, demo hoy-hoy).
+  def por_finalizar(hoy)
+    @periodos.select { |p| p['estado'] == 'EN_CURSO' && Date.parse(p['fechaFin']) <= hoy }
+  end
+
+  # UPDATE condicional PROGRAMADA->EN_CURSO: devuelve la fila o nil si el
+  # estado ya no es el esperado (idempotencia, sin doble evento).
+  def marcar_en_curso(id)
+    transicionar(id, 'PROGRAMADA', 'EN_CURSO')
+  end
+
+  # UPDATE condicional EN_CURSO->FINALIZADA: misma semántica.
+  def marcar_finalizada(id)
+    transicionar(id, 'EN_CURSO', 'FINALIZADA')
+  end
+
+  # Helper de test: agrega un período sin pasar por crear().
+  def agregar(periodo)
+    @periodos << periodo
+    periodo
+  end
+
+  private
+
+  def transicionar(id, estado_esperado, estado_nuevo)
+    period = @periodos.find { |p| p['id'] == id }
+    return nil if period.nil? || period['estado'] != estado_esperado
+
+    actualizado = period.merge('estado' => estado_nuevo)
+    @transiciones << actualizado
+    reemplazar(actualizado)
+    actualizado
+  end
+
+  def reemplazar(periodo)
+    idx = @periodos.index { |p| p['id'] == periodo['id'] }
+    @periodos[idx] = periodo
+    periodo
   end
 end
 
 class FakePublisher
-  attr_reader :publicaciones, :fallos
+  attr_reader :publicaciones, :fallos, :iniciadas, :finalizadas
 
   def initialize
     @publicaciones = []
     @fallos = []
+    @iniciadas = []
+    @finalizadas = []
     @fail_next = false
   end
 
@@ -156,12 +205,32 @@ class FakePublisher
   # Mimics the real Publisher contract: a publish failure is swallowed
   # (logged in the real one) and never propagates to the caller.
   def publish_vacaciones_programadas(periodo, empleado_email, _now_provider = nil)
+    registrar(periodo, empleado_email)
+  end
+
+  # Reto 5: vacaciones.iniciadas / vacaciones.finalizadas (mismo contrato,
+  # con listas dedicadas para afirmar conteos exactos sin ambigüedad).
+  def publish_vacaciones_iniciadas(periodo, empleado_email, _now_provider = nil)
+    registrar(periodo, empleado_email, :iniciadas)
+  end
+
+  def publish_vacaciones_finalizadas(periodo, empleado_email, _now_provider = nil)
+    registrar(periodo, empleado_email, :finalizadas)
+  end
+
+  private
+
+  def registrar(periodo, empleado_email, lista_especifica = nil)
     if @fail_next
       @fail_next = false
       @fallos << [periodo, empleado_email]
       return false
     end
     @publicaciones << [periodo, empleado_email]
+    case lista_especifica
+    when :iniciadas then @iniciadas << [periodo, empleado_email]
+    when :finalizadas then @finalizadas << [periodo, empleado_email]
+    end
     true
   end
 end

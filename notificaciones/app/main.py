@@ -1,5 +1,6 @@
 """HTTP layer: read-only REST endpoints with camelCase JSON (Reto contract)."""
 
+import os
 import uuid
 from datetime import datetime, timezone
 
@@ -37,7 +38,13 @@ def serializar(notificacion: Notificacion) -> dict:
     }
 
 
-def crear_app() -> FastAPI:
+def crear_app(root_path: str | None = None) -> FastAPI:
+    # root_path inyectable solo para tests (TestClient no pasa por el gateway:
+    # su scope hereda app.root_path y el strip del gateway lo dejaria en "").
+    # Produccion mantiene /notificaciones (env NOTIFICACIONES_ROOT_PATH).
+    effective = root_path if root_path is not None else os.getenv(
+        "NOTIFICACIONES_ROOT_PATH", "/notificaciones"
+    )
     app = FastAPI(
         title="notificaciones-service",
         description=(
@@ -50,7 +57,7 @@ def crear_app() -> FastAPI:
         # root_path hace que /docs fetchee /notificaciones/openapi.json,
         # que el gateway vuelve a stripear a /openapi.json. Sin esto el UI
         # pediría /openapi.json pelado y el gateway no sabría a qué servicio va.
-        root_path="/notificaciones",
+        root_path=effective,
     )
 
     @app.on_event("startup")

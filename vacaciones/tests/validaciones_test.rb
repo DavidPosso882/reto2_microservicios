@@ -16,16 +16,17 @@ class ValidacionesTest < Minitest::Test
     @validations = Vacaciones::Validations.new(@empleados, @vacaciones, today_provider: -> { @hoy })
   end
 
-  def test_validacion_1_fecha_fin_no_posterior_a_fecha_inicio
-    attrs = { 'empleadoId' => 'E001', 'fechaInicio' => '2026-12-15', 'fechaFin' => '2026-12-15' }
-    errors = @validations.call(attrs)
-    assert_equal 1, errors.length
-    assert_includes errors.first.message, 'fechaFin'
-
+  def test_validacion_1_fecha_fin_anterior_a_fecha_inicio
+    # Rango invertido: inválido.
     attrs = { 'empleadoId' => 'E001', 'fechaInicio' => '2026-12-20', 'fechaFin' => '2026-12-15' }
     errors = @validations.call(attrs)
     assert_equal 1, errors.length
     assert_includes errors.first.message, 'fechaFin'
+
+    # Reto 5 (demo del PDF): período de un solo día, fechaFin == fechaInicio,
+    # es válido (la estrategia de demo usa fechaInicio=hoy/fechaFin=hoy).
+    attrs = { 'empleadoId' => 'E001', 'fechaInicio' => '2026-12-15', 'fechaFin' => '2026-12-15' }
+    assert_empty @validations.call(attrs)
   end
 
   def test_validacion_2_fecha_inicio_anterior_a_hoy

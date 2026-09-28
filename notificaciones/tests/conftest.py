@@ -27,7 +27,9 @@ def sesion():
 
 @pytest.fixture()
 def cliente(sesion):
-    app = crear_app()
+    # TestClient no pasa por el gateway (sin strip): root_path vacío evita
+    # que GET /notificaciones termine matcheando "" y devuelva 404.
+    app = crear_app(root_path="")
     # The dependency must use the SAME engine (SQLite in-memory, StaticPool).
     app.dependency_overrides[obtener_sesion_original()] = lambda: sesion
     with TestClient(app) as c:

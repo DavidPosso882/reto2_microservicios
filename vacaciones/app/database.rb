@@ -37,6 +37,7 @@ module Vacaciones
         estado TEXT NOT NULL,
         fecha_creacion TIMESTAMPTZ NOT NULL DEFAULT now()
       );
+      CREATE INDEX IF NOT EXISTS idx_vacaciones_estado ON vacaciones (estado);
       CREATE INDEX IF NOT EXISTS idx_vacaciones_empleado ON vacaciones (empleado_id);
       CREATE TABLE IF NOT EXISTS empleados_locales (
         empleado_id TEXT PRIMARY KEY,
