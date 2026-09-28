@@ -1,0 +1,29 @@
+info:
+  name: 21-Cancelar-Periodo
+  type: http
+  seq: 7
+
+http:
+  method: DELETE
+  url: "{{gateway_url}}/vacaciones/V-2026-0001"
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("Responde 200 OK", function() {
+          expect(res.getStatus()).to.equal(200);
+        });
+        test("Estado CANCELADA", function() {
+          expect(res.getBody().estado).to.equal("CANCELADA");
+        });
+        // Solo períodos futuros (hoy < fechaInicio). El registro se conserva:
+        // 17-Listar-Por-Empleado sigue mostrándolo con estado CANCELADA.
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

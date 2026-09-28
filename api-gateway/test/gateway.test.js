@@ -259,4 +259,53 @@ describe('api-gateway', () => {
     assert.equal(body.status, 503);
     assert.match(body.error, /vacaciones/i);
   });
+
+  // -- Docs vía gateway (strip del prefijo, negocio intacto) --
+  it('docs departamentos: /departamentos/api-docs/* llega como /api-docs/*', async () => {
+    const res = await fetch(`${gateway.url}/departamentos/api-docs/swagger-ui.css`);
+    assert.equal(res.status, 200);
+    assert.equal(departamentos.requests.at(-1).url, '/api-docs/swagger-ui.css');
+  });
+
+  it('docs empleados: swagger-ui y v3 llegan en raíz', async () => {
+    let res = await fetch(`${gateway.url}/empleados/swagger-ui/index.html`);
+    assert.equal(res.status, 200);
+    assert.equal(empleados.requests.at(-1).url, '/swagger-ui/index.html');
+    res = await fetch(`${gateway.url}/empleados/v3/api-docs/swagger-config`);
+    assert.equal(res.status, 200);
+    assert.equal(empleados.requests.at(-1).url, '/v3/api-docs/swagger-config');
+  });
+
+  it('docs empleados: fallback absoluto para el JS de springdoc (/v3/api-docs sin prefijo)', async () => {
+    const res = await fetch(`${gateway.url}/v3/api-docs/swagger-config`);
+    assert.equal(res.status, 200);
+    assert.equal(empleados.requests.at(-1).url, '/v3/api-docs/swagger-config');
+  });
+
+  it('docs notificaciones: /notificaciones/docs llega como /docs', async () => {
+    const res = await fetch(`${gateway.url}/notificaciones/docs`);
+    assert.equal(res.status, 200);
+    assert.equal(notificaciones.requests.at(-1).url, '/docs');
+  });
+
+  it('docs notificaciones: openapi.json con query preservada', async () => {
+    const res = await fetch(`${gateway.url}/notificaciones/openapi.json`);
+    assert.equal(res.status, 200);
+    assert.equal(notificaciones.requests.at(-1).url, '/openapi.json');
+  });
+
+  it('docs perfiles/vacaciones: openapi.yaml y docs con strip', async () => {
+    let res = await fetch(`${gateway.url}/perfiles/openapi.yaml`);
+    assert.equal(res.status, 200);
+    assert.equal(perfiles.requests.at(-1).url, '/openapi.yaml');
+    res = await fetch(`${gateway.url}/perfiles/docs`);
+    assert.equal(res.status, 200);
+    assert.equal(perfiles.requests.at(-1).url, '/docs');
+    res = await fetch(`${gateway.url}/vacaciones/openapi.yaml`);
+    assert.equal(res.status, 200);
+    assert.equal(vacaciones.requests.at(-1).url, '/openapi.yaml');
+    res = await fetch(`${gateway.url}/vacaciones/docs`);
+    assert.equal(res.status, 200);
+    assert.equal(vacaciones.requests.at(-1).url, '/docs');
+  });
 });

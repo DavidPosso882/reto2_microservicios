@@ -1,0 +1,33 @@
+info:
+  name: 22-Retirar-Empleado
+  type: http
+  seq: 7
+
+http:
+  method: DELETE
+  url: "{{gateway_url}}/empleados/E200"
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("Responde 200 OK", function() {
+          expect(res.getStatus()).to.equal(200);
+        });
+        test("Estado RETIRADO", function() {
+          expect(res.getBody().estado).to.equal("RETIRADO");
+        });
+        test("Trae fechaRetiro", function() {
+          expect(res.getBody().fechaRetiro).to.be.a("string");
+        });
+        // Baja lógica: el registro se conserva. Publica empleado.retirado:
+        // tras ~15s re-ejecutar 10-Consultar-Perfil (archivado:true) y
+        // 14-Notificaciones-Por-Empleado (DESVINCULACION).
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

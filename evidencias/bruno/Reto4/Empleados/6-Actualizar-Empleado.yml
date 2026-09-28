@@ -1,0 +1,35 @@
+info:
+  name: 6-Actualizar-Empleado
+  type: http
+  seq: 4
+
+http:
+  method: PUT
+  url: "{{gateway_url}}/empleados/E200"
+  body:
+    type: json
+    data: |-
+      {
+        "email": "maria.lopez.nueva@empresa.com"
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("Responde 200 OK", function() {
+          expect(res.getStatus()).to.equal(200);
+        });
+        test("Email actualizado", function() {
+          expect(res.getBody().email).to.equal("maria.lopez.nueva@empresa.com");
+        });
+        // Publica empleado.actualizado: tras ~15s el perfil de E200 refleja
+        // el email nuevo (re-ejecutar 10-Consultar-Perfil).
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

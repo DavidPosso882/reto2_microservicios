@@ -1,0 +1,33 @@
+info:
+  name: 10-Consultar-Perfil
+  type: http
+  seq: 2
+
+http:
+  method: GET
+  url: "{{gateway_url}}/perfiles/E200"
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("Responde 200 OK", function() {
+          expect(res.getStatus()).to.equal(200);
+        });
+        test("Es el perfil de E200", function() {
+          expect(res.getBody().empleadoId).to.equal("E200");
+        });
+        test("No archivado (antes del retiro)", function() {
+          expect(res.getBody().archivado).to.equal(false);
+        });
+        // ASINCRÓNICO: si da 404 el evento aún no se consumió o se ejecutó
+        // antes de crear E200. Esperar ~15s y re-ejecutar este request.
+        // Tras 22-Retirar-Empleado (+15s), archivado pasa a true (verificar a ojo).
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

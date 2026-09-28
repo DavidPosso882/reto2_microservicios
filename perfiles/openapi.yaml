@@ -12,8 +12,10 @@ info:
   version: 1.0.0
 
 servers:
+  - url: http://localhost:8080/perfiles
+    description: Vía API Gateway (canónico para la entrega)
   - url: http://localhost:8083
-    description: Local (fuera de Docker)
+    description: Directo (solo con port-forward, sin puertos al host en compose)
   - url: http://perfiles-service:8083
     description: Dentro de la red Docker (solo interno, sin puertos al host)
 
@@ -46,6 +48,18 @@ paths:
           description: Especificación OpenAPI (YAML)
           content:
             application/yaml:
+              schema:
+                type: string
+
+  /docs:
+    get:
+      summary: Swagger UI (CDN + ./openapi.yaml relativo, funciona vía gateway)
+      operationId: getDocs
+      responses:
+        "200":
+          description: Página HTML del Swagger UI
+          content:
+            text/html:
               schema:
                 type: string
 

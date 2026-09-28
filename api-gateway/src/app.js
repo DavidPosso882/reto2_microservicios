@@ -8,12 +8,20 @@ import { createProxyMiddleware } from 'http-proxy-middleware';
  * contains business logic. Bodies, headers, query strings and status codes
  * travel untouched between the client and the upstream service.
  *
- * Routing:
+ * Routing (negocio, con re-attach del prefijo porque el upstream espera /empleados, /departamentos...):
  *   /empleados*      -> empleados-service
  *   /departamentos*  -> departamentos-service
  *   /perfiles*       -> perfiles-service (Reto 4)
  *   /notificaciones* -> notificaciones-service (Reto 4)
  *   /vacaciones*     -> vacaciones-service (Reto 4)
+ *
+ * Docs (Swagger UI / OpenAPI, SIN re-attach porque el upstream sirve docs en raiz):
+ * se montan ANTES del negocio y quitan el prefijo del gateway:
+ *   /departamentos/api-docs* -> /api-docs* (swagger-ui-express)
+ *   /empleados/swagger-ui.html, /empleados/swagger-ui*, /empleados/v3/api-docs* -> idem en raiz (springdoc)
+ *   /notificaciones/docs, /redoc, /openapi.json -> /docs, /redoc, /openapi.json (FastAPI con root_path)
+ *   /perfiles/openapi.yaml, /perfiles/docs -> /openapi.yaml, /docs (Go, docs propios)
+ *   /vacaciones/openapi.yaml, /vacaciones/docs -> /openapi.yaml, /docs (Ruby, docs propios)
  *
  * Upstream URLs are injected so tests can point at fake servers while
  * production (docker-compose) points at the Docker service names.
@@ -72,6 +80,138 @@ export function createGateway({
       error: proxyErrorHandler(servicio),
     },
   });
+
+  // Docs proxies: strip the gateway prefix because upstreams serve docs at root.
+  // MUST be mounted BEFORE the business proxies (Express matches in order).
+  // Uses req.originalUrl (full path) so it does not depend on Express stripping.
+  const docsRewrite = (gatewayPrefix, upstreamBase) => (path, req) => {
+    const orig = (req && req.originalUrl) || path || '/';
+    const qmark = orig.indexOf('?');
+    const pathname = qmark === -1 ? orig : orig.slice(0, qmark);
+    const search = qmark === -1 ? '' : orig.slice(qmark);
+    let rest = pathname.startsWith(gatewayPrefix)
+      ? pathname.slice(gatewayPrefix.length)
+      : pathname;
+    if (rest === '') rest = '/';
+    const base = upstreamBase.endsWith('/') ? upstreamBase.slice(0, -1) : upstreamBase;
+    let upstreamPath;
+    if (rest === '/') {
+      // Bare docs URL: swagger-ui-express EXIGE trailing (/api-docs -> 301 a /api-docs/).
+      // FastAPI/Go/Ruby exigen lo contrario (/docs/ -> 307 a /docs). Diferenciar por base.
+      upstreamPath = base === '/api-docs' ? `${base}/` : base;
+    } else {
+      upstreamPath = `${base}${rest.startsWith('/') ? rest : `/${rest}`}`;
+    }
+    return `${upstreamPath}${search}`;
+  };
+
+  // Reescribe redirects del upstream (Location: /swagger-ui/... ) para no perder el prefijo.
+  // Sin esto el navegador sigue a /swagger-ui/... pelado y el gateway devuelve 404.
+  const docsLocationRewrite = (gatewayPrefix) => (proxyRes, req) => {
+    const loc = proxyRes.headers && proxyRes.headers.location;
+    if (typeof loc !== 'string' || !loc.startsWith('/')) return;
+    const serviceRoot = `/${gatewayPrefix.split('/')[1]}`;
+    if (loc === serviceRoot || loc.startsWith(`${serviceRoot}/`)) return;
+    proxyRes.headers.location = `${serviceRoot}${loc}`;
+  };
+
+  const docsProxy = (target, servicio, gatewayPrefix, upstreamBase) => ({
+    target,
+    changeOrigin: true,
+    pathRewrite: docsRewrite(gatewayPrefix, upstreamBase),
+    proxyTimeout: 30000,
+    timeout: 30000,
+    on: {
+      error: proxyErrorHandler(servicio),
+      proxyRes: docsLocationRewrite(gatewayPrefix),
+    },
+  });
+
+  // -- Departamentos (swagger-ui-express en /api-docs) --
+  app.use(
+    '/departamentos/api-docs',
+    createProxyMiddleware(
+      docsProxy(departamentosUrl, 'departamentos', '/departamentos/api-docs', '/api-docs'),
+    ),
+  );
+  // -- Empleados (springdoc: /swagger-ui.html, /swagger-ui/*, /v3/api-docs/*) --
+  app.use(
+    '/empleados/swagger-ui.html',
+    createProxyMiddleware(
+      docsProxy(empleadosUrl, 'empleados', '/empleados/swagger-ui.html', '/swagger-ui.html'),
+    ),
+  );
+  app.use(
+    '/empleados/swagger-ui',
+    createProxyMiddleware(
+      docsProxy(empleadosUrl, 'empleados', '/empleados/swagger-ui', '/swagger-ui'),
+    ),
+  );
+  app.use(
+    '/empleados/v3/api-docs',
+    createProxyMiddleware(
+      docsProxy(empleadosUrl, 'empleados', '/empleados/v3/api-docs', '/v3/api-docs'),
+    ),
+  );
+  // Fallback absoluto: el JS de springdoc pide /v3/api-docs/... y /swagger-ui/... sin prefijo.
+  // Solo empleados usa esas raíces, así que exponerlas en el gateway es seguro y evita
+  // el "Failed to load remote configuration" sin tocar el servicio.
+  app.use(
+    '/v3/api-docs',
+    createProxyMiddleware(docsProxy(empleadosUrl, 'empleados', '/v3/api-docs', '/v3/api-docs')),
+  );
+  app.use(
+    '/swagger-ui',
+    createProxyMiddleware(docsProxy(empleadosUrl, 'empleados', '/swagger-ui', '/swagger-ui')),
+  );
+  // -- Notificaciones (FastAPI con root_path=/notificaciones) --
+  app.use(
+    '/notificaciones/docs',
+    createProxyMiddleware(
+      docsProxy(notificacionesUrl, 'notificaciones', '/notificaciones/docs', '/docs'),
+    ),
+  );
+  app.use(
+    '/notificaciones/redoc',
+    createProxyMiddleware(
+      docsProxy(notificacionesUrl, 'notificaciones', '/notificaciones/redoc', '/redoc'),
+    ),
+  );
+  app.use(
+    '/notificaciones/openapi.json',
+    createProxyMiddleware(
+      docsProxy(
+        notificacionesUrl,
+        'notificaciones',
+        '/notificaciones/openapi.json',
+        '/openapi.json',
+      ),
+    ),
+  );
+  // -- Perfiles (Go: YAML + /docs propio con CDN relativo) --
+  app.use(
+    '/perfiles/openapi.yaml',
+    createProxyMiddleware(
+      docsProxy(perfilesUrl, 'perfiles', '/perfiles/openapi.yaml', '/openapi.yaml'),
+    ),
+  );
+  app.use(
+    '/perfiles/docs',
+    createProxyMiddleware(docsProxy(perfilesUrl, 'perfiles', '/perfiles/docs', '/docs')),
+  );
+  // -- Vacaciones (Ruby: YAML + /docs propio con CDN relativo) --
+  app.use(
+    '/vacaciones/openapi.yaml',
+    createProxyMiddleware(
+      docsProxy(vacacionesUrl, 'vacaciones', '/vacaciones/openapi.yaml', '/openapi.yaml'),
+    ),
+  );
+  app.use(
+    '/vacaciones/docs',
+    createProxyMiddleware(
+      docsProxy(vacacionesUrl, 'vacaciones', '/vacaciones/docs', '/docs'),
+    ),
+  );
 
   // NOTE: no express.json() before the proxies on purpose: parsing the body
   // here would consume the stream and the upstream would receive an empty body.

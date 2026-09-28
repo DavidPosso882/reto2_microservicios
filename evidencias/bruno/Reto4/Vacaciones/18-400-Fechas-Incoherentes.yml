@@ -1,0 +1,36 @@
+info:
+  name: 18-400-Fechas-Incoherentes
+  type: http
+  seq: 4
+
+http:
+  method: POST
+  url: "{{gateway_url}}/vacaciones"
+  body:
+    type: json
+    data: |-
+      {
+        "empleadoId": "E200",
+        "fechaInicio": "2027-06-30",
+        "fechaFin": "2027-06-15"
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("Responde 400 Bad Request", function() {
+          expect(res.getStatus()).to.equal(400);
+        });
+        test("Mensaje exacto", function() {
+          expect(res.getBody().error).to.equal("fechaFin (2027-06-15) debe ser posterior a fechaInicio (2027-06-30)");
+        });
+        // No trae la clave `conflicto`: eso es exclusivo del solapamiento.
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

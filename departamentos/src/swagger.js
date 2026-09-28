@@ -6,12 +6,16 @@ const options = {
     info: {
       title: 'Departamentos Service API',
       version: '1.0.0',
-      description: 'API de gestión de departamentos (Reto 2).',
+      description: 'API de gestión de departamentos (Reto 2). Vía gateway: http://localhost:8080/departamentos/api-docs.',
     },
     servers: [
       {
+        url: 'http://localhost:8080/departamentos',
+        description: 'Vía API Gateway (canónico para la entrega)',
+      },
+      {
         url: 'http://localhost:8082',
-        description: 'Servidor local',
+        description: 'Directo (solo con port-forward)',
       },
     ],
     components: {

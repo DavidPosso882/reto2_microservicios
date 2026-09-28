@@ -1,0 +1,42 @@
+info:
+  name: 15-Programar-Vacaciones
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{gateway_url}}/vacaciones"
+  body:
+    type: json
+    data: |-
+      {
+        "empleadoId": "E200",
+        "fechaInicio": "2027-06-15",
+        "fechaFin": "2027-06-30"
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("Responde 201 Created", function() {
+          expect(res.getStatus()).to.equal(201);
+        });
+        test("El id lo genera el servidor (V-AAAA-NNNN)", function() {
+          expect(res.getBody().id).to.match(/^V-\d{4}-\d{4}$/);
+        });
+        test("Queda PROGRAMADA", function() {
+          expect(res.getBody().estado).to.equal("PROGRAMADA");
+        });
+        // Requiere que el evento empleado.creado de E200 ya llegó a la réplica
+        // local (si no: 400 "aún no llegó el evento empleado.creado").
+        // Publica vacaciones.programadas: tras ~15s re-ejecutar
+        // 14-Notificaciones-Por-Empleado para ver la notificación VACACIONES.
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

@@ -1,0 +1,7 @@
+ Container reto2-database-departamentos-1 Waiting 
+ Container reto2-database-departamentos-1 Healthy 
+--- Estado antes del POST ---
+{"nombre":"departamentos","estado":"CLOSED","tasaFallosPorcentaje":-1.0,"llamadasExitosas":0,"llamadasFallidas":0,"llamadasBloqueadas":0}--- POST con departamento NO-EXISTE ---
+{"status":400,"error":"El departamento con id 'NO-EXISTE' no existe"}
+--- Estado después del POST ---
+{"nombre":"departamentos","estado":"CLOSED","tasaFallosPorcentaje":-1.0,"llamadasExitosas":1,"llamadasFallidas":0,"llamadasBloqueadas":0}

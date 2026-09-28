@@ -43,9 +43,14 @@ def crear_app() -> FastAPI:
         description=(
             "Servicio puramente reactivo del ecosistema: consume eventos de "
             "RabbitMQ, simula el envío de notificaciones y expone su historial "
-            "solo en lectura (Reto 4)."
+            "solo en lectura (Reto 4). Vía gateway en /notificaciones/docs."
         ),
         version="1.0.0",
+        # Gateway sirve docs con strip (/notificaciones/docs -> /docs upstream).
+        # root_path hace que /docs fetchee /notificaciones/openapi.json,
+        # que el gateway vuelve a stripear a /openapi.json. Sin esto el UI
+        # pediría /openapi.json pelado y el gateway no sabría a qué servicio va.
+        root_path="/notificaciones",
     )
 
     @app.on_event("startup")

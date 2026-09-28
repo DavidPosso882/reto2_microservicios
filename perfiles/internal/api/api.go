@@ -27,6 +27,19 @@ type Server struct {
 	Store Store
 }
 
+// swaggerUIHTML is a dependency-free docs page: SwaggerUI from CDN loading
+// the sibling ./openapi.yaml with a relative URL (gateway-safe).
+const swaggerUIHTML = `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>perfiles-service - Swagger UI</title>
+<link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css"/>
+</head>
+<body><div id="swagger-ui"></div>
+<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script>window.onload=()=>{SwaggerUIBundle({url:"./openapi.yaml",dom_id:"#swagger-ui"})};</script>
+</body></html>`
+
 // Handler builds the HTTP mux: REST routes, health and OpenAPI spec.
 func (s *Server) Handler(openapiYAML []byte) http.Handler {
 	mux := http.NewServeMux()
@@ -40,6 +53,19 @@ func (s *Server) Handler(openapiYAML []byte) http.Handler {
 	mux.HandleFunc("GET /openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/yaml")
 		_, _ = w.Write(openapiYAML)
+	})
+	// Swagger UI mínimo sin dependencias: CDN + spec relativa ./openapi.yaml.
+	// Relativa a propósito: funciona directo (:8083/docs) y vía gateway
+	// (:8080/perfiles/docs -> /docs upstream, ./openapi.yaml -> /perfiles/openapi.yaml).
+	mux.HandleFunc("GET /docs", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(swaggerUIHTML))
+	})
+	// Misma página en /docs/ SIN redirect: un 302 con Location: /docs pierde
+	// el prefijo /perfiles vía gateway y el navegador termina en 404.
+	mux.HandleFunc("GET /docs/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(swaggerUIHTML))
 	})
 	return mux
 }

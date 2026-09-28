@@ -44,6 +44,43 @@ module Vacaciones
       File.read(File.expand_path('openapi.yaml', __dir__))
     end
 
+    # Swagger UI mínimo sin dependencias: CDN + spec relativa ./openapi.yaml.
+    # Relativa a propósito: funciona directo y vía gateway
+    # (/vacaciones/docs -> /docs upstream, ./openapi.yaml -> /vacaciones/openapi.yaml).
+    get '/docs' do
+      content_type 'text/html'
+      <<~HTML
+        <!DOCTYPE html>
+        <html lang="es">
+        <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>vacaciones-service - Swagger UI</title>
+        <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css"/>
+        </head>
+        <body><div id="swagger-ui"></div>
+        <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+        <script>window.onload=()=>{SwaggerUIBundle({url:"./openapi.yaml",dom_id:"#swagger-ui"})};</script>
+        </body></html>
+      HTML
+    end
+
+    # Misma página en /docs/ SIN redirect: un 302 con Location: /docs pierde
+    # el prefijo /vacaciones vía gateway y el navegador termina en 404.
+    get '/docs/' do
+      content_type 'text/html'
+      <<~HTML
+        <!DOCTYPE html>
+        <html lang="es">
+        <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>vacaciones-service - Swagger UI</title>
+        <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css"/>
+        </head>
+        <body><div id="swagger-ui"></div>
+        <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+        <script>window.onload=()=>{SwaggerUIBundle({url:"./openapi.yaml",dom_id:"#swagger-ui"})};</script>
+        </body></html>
+      HTML
+    end
+
     # ── REST: vacaciones (delegates to Vacaciones::Endpoints) ─────────────────
     get '/vacaciones' do
       body, obj = endpoints.index(params['empleadoId'])

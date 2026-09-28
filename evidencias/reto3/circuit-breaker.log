@@ -1,24 +1,34 @@
---- Petición 1 ---
-{"id":"E001","nombre":"Test","apellido":"CB","email":"cb1@empresa.com","numeroEmpleado":"EMP-CB-001","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PE
-duración: 15.345815321s
---- Petición 2 ---
-{"id":"E002","nombre":"Test","apellido":"CB","email":"cb2@empresa.com","numeroEmpleado":"EMP-CB-002","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PE
-duración: 15.031873520s
---- Petición 3 ---
-{"id":"E003","nombre":"Test","apellido":"CB","email":"cb3@empresa.com","numeroEmpleado":"EMP-CB-003","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PE
-duración: 15.049494731s
---- Petición 4 ---
-{"id":"E004","nombre":"Test","apellido":"CB","email":"cb4@empresa.com","numeroEmpleado":"EMP-CB-004","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PE
-duración: 7.034979223s
---- Petición 5 ---
-{"id":"E005","nombre":"Test","apellido":"CB","email":"cb5@empresa.com","numeroEmpleado":"EMP-CB-005","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PE
-duración: 15.040664600s
---- Petición 6 ---
-{"id":"E006","nombre":"Test","apellido":"CB","email":"cb6@empresa.com","numeroEmpleado":"EMP-CB-006","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PE
-duración: .023923312s
---- Petición 7 ---
-{"id":"E007","nombre":"Test","apellido":"CB","email":"cb7@empresa.com","numeroEmpleado":"EMP-CB-007","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PE
-duración: .021218302s
---- Petición 8 ---
-{"id":"E008","nombre":"Test","apellido":"CB","email":"cb8@empresa.com","numeroEmpleado":"EMP-CB-008","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PE
-duración: .021509327s
+--- Petición 1 (E011) ---
+{"id":"E011","nombre":"Test","apellido":"CB","email":"cb11@empresa.com","numeroEmpleado":"EMP-CB-011","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PENDIENTE_VALIDACION","mensaje":"Empleado registrado. Validación de departamento pendiente."}
+duración: 15.645311127s
+estado: {"nombre":"departamentos","estado":"CLOSED","tasaFallosPorcentaje":-1.0,"llamadasExitosas":0,"llamadasFallidas":1,"llamadasBloqueadas":0}
+--- Petición 2 (E012) ---
+{"id":"E012","nombre":"Test","apellido":"CB","email":"cb12@empresa.com","numeroEmpleado":"EMP-CB-012","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PENDIENTE_VALIDACION","mensaje":"Empleado registrado. Validación de departamento pendiente."}
+duración: 15.079232559s
+estado: {"nombre":"departamentos","estado":"CLOSED","tasaFallosPorcentaje":-1.0,"llamadasExitosas":0,"llamadasFallidas":2,"llamadasBloqueadas":0}
+--- Petición 3 (E013) ---
+{"id":"E013","nombre":"Test","apellido":"CB","email":"cb13@empresa.com","numeroEmpleado":"EMP-CB-013","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PENDIENTE_VALIDACION","mensaje":"Empleado registrado. Validación de departamento pendiente."}
+duración: 15.091908735s
+estado: {"nombre":"departamentos","estado":"CLOSED","tasaFallosPorcentaje":-1.0,"llamadasExitosas":0,"llamadasFallidas":3,"llamadasBloqueadas":0}
+--- Petición 4 (E014) ---
+{"id":"E014","nombre":"Test","apellido":"CB","email":"cb14@empresa.com","numeroEmpleado":"EMP-CB-014","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PENDIENTE_VALIDACION","mensaje":"Empleado registrado. Validación de departamento pendiente."}
+duración: 7.079407366s
+estado: {"nombre":"departamentos","estado":"CLOSED","tasaFallosPorcentaje":-1.0,"llamadasExitosas":0,"llamadasFallidas":4,"llamadasBloqueadas":0}
+--- Petición 5 (E015) ---
+{"id":"E015","nombre":"Test","apellido":"CB","email":"cb15@empresa.com","numeroEmpleado":"EMP-CB-015","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PENDIENTE_VALIDACION","mensaje":"Empleado registrado. Validación de departamento pendiente."}
+duración: 15.090522417s
+estado: {"nombre":"departamentos","estado":"OPEN","tasaFallosPorcentaje":100.0,"llamadasExitosas":0,"llamadasFallidas":5,"llamadasBloqueadas":0}
+--- Petición 6 (E016) ---
+{"id":"E016","nombre":"Test","apellido":"CB","email":"cb16@empresa.com","numeroEmpleado":"EMP-CB-016","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PENDIENTE_VALIDACION","mensaje":"Empleado registrado. Validación de departamento pendiente."}
+duración: .062428943s
+estado: {"nombre":"departamentos","estado":"OPEN","tasaFallosPorcentaje":100.0,"llamadasExitosas":0,"llamadasFallidas":5,"llamadasBloqueadas":1}
+--- Petición 7 (E017) ---
+{"id":"E017","nombre":"Test","apellido":"CB","email":"cb17@empresa.com","numeroEmpleado":"EMP-CB-017","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PENDIENTE_VALIDACION","mensaje":"Empleado registrado. Validación de departamento pendiente."}
+duración: .044538277s
+estado: {"nombre":"departamentos","estado":"OPEN","tasaFallosPorcentaje":100.0,"llamadasExitosas":0,"llamadasFallidas":5,"llamadasBloqueadas":2}
+--- Petición 8 (E018) ---
+{"id":"E018","nombre":"Test","apellido":"CB","email":"cb18@empresa.com","numeroEmpleado":"EMP-CB-018","cargo":"Tester","area":"Tecnologia","departamentoId":"IT","fechaIngreso":"2026-03-01","estado":"PENDIENTE_VALIDACION","mensaje":"Empleado registrado. Validación de departamento pendiente."}
+duración: .064960996s
+estado: {"nombre":"departamentos","estado":"OPEN","tasaFallosPorcentaje":100.0,"llamadasExitosas":0,"llamadasFallidas":5,"llamadasBloqueadas":3}
+=== CB2: estado final ===
+{"nombre":"departamentos","estado":"OPEN","tasaFallosPorcentaje":100.0,"llamadasExitosas":0,"llamadasFallidas":5,"llamadasBloqueadas":3}

@@ -1,0 +1,38 @@
+info:
+  name: 19-400-Solapamiento
+  type: http
+  seq: 5
+
+http:
+  method: POST
+  url: "{{gateway_url}}/vacaciones"
+  body:
+    type: json
+    data: |-
+      {
+        "empleadoId": "E200",
+        "fechaInicio": "2027-06-20",
+        "fechaFin": "2027-07-05"
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("Responde 400 Bad Request", function() {
+          expect(res.getStatus()).to.equal(400);
+        });
+        test("Menciona el solapamiento", function() {
+          expect(res.getBody().error).to.equal("El período se solapa con otro período del empleado 'E200'");
+        });
+        // La clave `conflicto` (el período que molesta, con su id V-2026-XXXX)
+        // se verifica A OJO en el body: depende de que 15 se haya ejecutado
+        // antes con éxito. Este request NO persiste nada.
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

@@ -17,7 +17,7 @@ public class OpenApiConfig {
         return new OpenAPI()
                 .info(new Info()
                         .title("API de Gestión de Empleados")
-                        .description("Servicio REST para el registro y consulta de empleados - Reto 2")
-                        .version("2.0.0"));
+                        .description("Servicio REST para el registro y consulta de empleados - Reto 4 (eventos + baja lógica). Vía gateway: http://localhost:8080/empleados/swagger-ui.html")
+                        .version("4.0.0"));
     }
 }
