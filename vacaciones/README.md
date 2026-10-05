@@ -115,6 +115,11 @@ resuelve con ShedLock (o equivalente).
   arrancar o se cae a mitad de consumo; el servicio nunca crashea por esto.
 - **Publicación**: `vacaciones.programadas` con `empleadoEmail` tomado de la
   réplica local, para que Notificaciones no necesite consultar a nadie.
+- **Baja por retiro**: al consumir `empleado.retirado`, además de marcar
+  `RETIRADO` en la réplica, cancela a `CANCELADA` los `PROGRAMADA` con
+  `fechaInicio` posterior a la `fechaRetiro` (misma transacción que la marca
+  de dedup). Los `EN_CURSO` no se tocan (caso borde Reto 5) y el scheduler ya
+  no los toma como candidatos porque `por_iniciar` solo mira `PROGRAMADA`.
 - **Reto 5**: `vacaciones.iniciadas` (PROGRAMADA → EN_CURSO) y
   `vacaciones.finalizadas` (EN_CURSO → FINALIZADA), publicados por el
   scheduler tras la transición confirmada (mismo formato de envelope:

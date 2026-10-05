@@ -139,6 +139,30 @@ class FakeVacacionesRepo
     period
   end
 
+  def cancelar_futuras_por_retiro(empleado_id, fecha_retiro = nil)
+    corte = parse_corte(fecha_retiro) || Date.today
+    afectadas = []
+    @periodos = @periodos.map do |p|
+      if p['empleadoId'] == empleado_id && p['estado'] == 'PROGRAMADA' && Date.parse(p['fechaInicio']) > corte
+        cancelada = p.merge('estado' => 'CANCELADA')
+        @canceladas << cancelada
+        afectadas << cancelada
+        cancelada
+      else
+        p
+      end
+    end
+    afectadas
+  end
+
+  def parse_corte(value)
+    return nil if value.nil? || value.to_s.strip.empty?
+
+    Date.parse(value.to_s)
+  rescue ArgumentError
+    nil
+  end
+
   # ── Reto 5: superficie usada por el Scheduler ──
 
   # PROGRAMADA con fechaInicio <= hoy: candidatos a EN_CURSO.

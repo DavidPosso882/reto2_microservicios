@@ -14,7 +14,9 @@ info:
     consume `empleado.creado` y `empleado.retirado` (catálogos 3.1 y 3.3) del
     exchange topic `ecosistema.eventos` mediante la cola durable
     `q.vacaciones.empleados`, con deduplicación por `id` del envelope y ACK
-    manual posterior a la persistencia.
+    manual posterior a la persistencia. Al consumir `empleado.retirado`
+    cancela a `CANCELADA` los `PROGRAMADA` con `fechaInicio` posterior a la
+    `fechaRetiro` (los `EN_CURSO` no se tocan: caso borde Reto 5).
 
     Envelope de error del ecosistema: `{"status": <http code>, "error": "..."}`.
   version: 1.0.0
