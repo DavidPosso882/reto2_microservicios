@@ -50,7 +50,6 @@ Las 5 rutas de negocio del Reto 3 se enrutan igual; solo pasan de públicas a pr
 | `JWT_SECRET` | auth-service **y** api-gateway (misma clave) | obligatoria y fail-fast: si falta, compose aborta; generar con `openssl rand -hex 32` en `.env` |
 | `AUTH_URL` | api-gateway | `http://auth-service:8086` |
 | `SCHEDULER_INTERVAL_S` | vacaciones-service | segundos entre corridas del scheduler (default `60` = 1 minuto) |
-| `NOTIFICACIONES_ROOT_PATH` | notificaciones-service | root_path ASGI tras el strip del gateway (default `/notificaciones`) |
 
 ## 4. Cómo obtener un token
 

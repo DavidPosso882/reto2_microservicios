@@ -53,7 +53,6 @@ Respuesta camelCase: `id, tipo, destinatario, mensaje, fechaEnvio, empleadoId`.
 | `RABBITMQ_HOST` / `RABBITMQ_PORT` | `localhost` / `5672` |
 | `RABBITMQ_USER` / `RABBITMQ_PASSWORD` | `guest` / `guest` |
 | `CONSUMER_ENABLED` | `true` |
-| `NOTIFICACIONES_ROOT_PATH` | `/notificaciones` (root_path ASGI tras el gateway; override para entornos sin strip, como tests) |
 
 En `docker-compose.yml` se sobrescriben con los valores del ecosistema
 (`RABBITMQ_HOST=message-broker`, credenciales `${RABBITMQ_USER:-admin}`).

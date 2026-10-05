@@ -1,10 +1,11 @@
 """HTTP layer: read-only REST endpoints with camelCase JSON (Reto contract)."""
 
-import os
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -38,13 +39,13 @@ def serializar(notificacion: Notificacion) -> dict:
     }
 
 
-def crear_app(root_path: str | None = None) -> FastAPI:
-    # root_path inyectable solo para tests (TestClient no pasa por el gateway:
-    # su scope hereda app.root_path y el strip del gateway lo dejaria en "").
-    # Produccion mantiene /notificaciones (env NOTIFICACIONES_ROOT_PATH).
-    effective = root_path if root_path is not None else os.getenv(
-        "NOTIFICACIONES_ROOT_PATH", "/notificaciones"
-    )
+def crear_app() -> FastAPI:
+    # Sin root_path a propósito: las rutas de negocio llevan el prefijo
+    # (/notificaciones/...) porque el gateway lo re-adjunta al proxear
+    # (contrato en api-gateway/test). Con root_path Starlette despoja el
+    # prefijo antes de matchear y todo el negocio da 404 aunque el consumer
+    # persista bien. Los docs usan fetch relativo (./openapi.json) para que
+    # funcionen igual vía gateway que en directo.
     app = FastAPI(
         title="notificaciones-service",
         description=(
@@ -53,11 +54,9 @@ def crear_app(root_path: str | None = None) -> FastAPI:
             "solo en lectura (Reto 4). Vía gateway en /notificaciones/docs."
         ),
         version="1.0.0",
-        # Gateway sirve docs con strip (/notificaciones/docs -> /docs upstream).
-        # root_path hace que /docs fetchee /notificaciones/openapi.json,
-        # que el gateway vuelve a stripear a /openapi.json. Sin esto el UI
-        # pediría /openapi.json pelado y el gateway no sabría a qué servicio va.
-        root_path=effective,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url="/openapi.json",
     )
 
     @app.on_event("startup")
@@ -92,6 +91,22 @@ def crear_app(root_path: str | None = None) -> FastAPI:
             .order_by(Notificacion.fecha_envio)
         ).scalars().all()
         return [serializar(n) for n in rows]
+
+    @app.get("/docs", include_in_schema=False)
+    def docs() -> HTMLResponse:
+        # Fetch relativo: vía gateway resuelve a /notificaciones/openapi.json
+        # (stripeado a /openapi.json) y en directo a /openapi.json.
+        return get_swagger_ui_html(
+            openapi_url="./openapi.json",
+            title="notificaciones-service - Swagger UI",
+        )
+
+    @app.get("/redoc", include_in_schema=False)
+    def redoc() -> HTMLResponse:
+        return get_redoc_html(
+            openapi_url="./openapi.json",
+            title="notificaciones-service - ReDoc",
+        )
 
     @app.get("/health")
     def health():

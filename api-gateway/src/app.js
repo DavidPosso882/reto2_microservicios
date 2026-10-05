@@ -33,7 +33,7 @@ import { authenticate, authorizeService, forwardIdentity } from './middleware/au
  * se montan ANTES del negocio y quitan el prefijo del gateway:
  *   /departamentos/api-docs* -> /api-docs* (swagger-ui-express)
  *   /empleados/swagger-ui.html, /empleados/swagger-ui*, /empleados/v3/api-docs* -> idem en raiz (springdoc)
- *   /notificaciones/docs, /redoc, /openapi.json -> /docs, /redoc, /openapi.json (FastAPI con root_path)
+ *   /notificaciones/docs, /redoc, /openapi.json -> /docs, /redoc, /openapi.json (FastAPI sin root_path, fetch relativo)
  *   /perfiles/openapi.yaml, /perfiles/docs -> /openapi.yaml, /docs (Go, docs propios)
  *   /vacaciones/openapi.yaml, /vacaciones/docs -> /openapi.yaml, /docs (Ruby, docs propios)
  *
@@ -180,7 +180,7 @@ export function createGateway({
     '/swagger-ui',
     createProxyMiddleware(docsProxy(empleadosUrl, 'empleados', '/swagger-ui', '/swagger-ui')),
   );
-  // -- Notificaciones (FastAPI con root_path=/notificaciones) --
+  // -- Notificaciones (FastAPI sin root_path: negocio con prefijo, docs con fetch relativo) --
   app.use(
     '/notificaciones/docs',
     createProxyMiddleware(
