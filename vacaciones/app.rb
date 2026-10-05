@@ -145,7 +145,7 @@ module Vacaciones
       id_generator = IdGenerator.new
       validations = Validations.new(empleados_repo, vacaciones_repo)
       publisher = Publisher.new(config, logger)
-      consumer = EmpleadosConsumer.new(db, empleados_repo, logger, config)
+      consumer = EmpleadosConsumer.new(db, empleados_repo, logger, config, vacaciones_repo)
       endpoints = Endpoints.new(
         empleados_repo: empleados_repo,
         vacaciones_repo: vacaciones_repo,

@@ -81,6 +81,42 @@ module Vacaciones
       row.ntuples.zero? ? nil : from_row(row[0])
     end
 
+    # Baja por retiro: cancela los períodos PROGRAMADA con fecha_inicio
+    # posterior a la fecha de retiro. No toca EN_CURSO (caso borde Reto 5:
+    # el período en curso debe llegar a FINALIZADA sin reactivar la cuenta),
+    # ni FINALIZADA/CANCELADA. Retorna los períodos cancelados.
+    def cancelar_futuras_por_retiro(empleado_id, fecha_retiro = nil)
+      fecha_corte = self.class.parse_fecha_corte(fecha_retiro)
+      if fecha_corte
+        rows = connection.exec_params(
+          <<~SQL,
+            UPDATE vacaciones SET estado = 'CANCELADA'
+            WHERE empleado_id = $1 AND estado = 'PROGRAMADA' AND fecha_inicio > $2::date
+            RETURNING *
+          SQL
+          [empleado_id, fecha_corte.iso8601]
+        )
+      else
+        rows = connection.exec_params(
+          <<~SQL,
+            UPDATE vacaciones SET estado = 'CANCELADA'
+            WHERE empleado_id = $1 AND estado = 'PROGRAMADA' AND fecha_inicio > CURRENT_DATE
+            RETURNING *
+          SQL
+          [empleado_id]
+        )
+      end
+      rows.map { |r| from_row(r) }
+    end
+
+    def self.parse_fecha_corte(value)
+      return nil if value.nil? || value.to_s.strip.empty?
+
+      Date.parse(value.to_s)
+    rescue Date::Error, ArgumentError
+      nil
+    end
+
     def from_row(row)
       {
         'id' => row['id'],

@@ -10,7 +10,11 @@ Servicio **productor** del ecosistema (Reto 4 — comunicación asincrónica):
   revierte la base de datos.
 - **Consume** `empleado.creado` y `empleado.retirado` (catálogos 3.1 y 3.3)
   para mantener una **réplica local de empleados** (opción b: validación por
-  eventos, sin llamadas REST salientes).
+  eventos, sin llamadas REST salientes). Al consumir `empleado.retirado`,
+  además de marcar `RETIRADO` en la réplica, cancela automáticamente a
+  `CANCELADA` los períodos `PROGRAMADA` con `fechaInicio` posterior a la
+  `fechaRetiro` (misma transacción que la marca de dedup). Los `EN_CURSO`
+  no se tocan: deben llegar a `FINALIZADA` en el Reto 5 sin reactivar la cuenta.
 
 Contrato normativo: `CATALOGO_EVENTOS.md` en la raíz del repositorio.
 

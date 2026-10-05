@@ -116,6 +116,14 @@ class ConsumerDedupTest < Minitest::Test
     assert_equal 30, Vacaciones::EmpleadosConsumer::BACKOFF_MAX
   end
 
+  def test_retiro_sin_repo_vacaciones_no_falla_por_compatibilidad
+    envelope = evento('empleado.retirado', 'E001', 'ACTIVO')
+    channel = FakeChannel.new
+    resultado = @consumer.procesar_mensaje_publico(channel, FakeDeliveryInfo.new(1), JSON.generate(envelope))
+    assert_equal :procesado, resultado
+    assert_equal 'RETIRADO', @empleados.buscar('E001')['estado']
+  end
+
   private
 
   def evento(type, empleado_id, estado)
@@ -134,6 +142,79 @@ class ConsumerDedupTest < Minitest::Test
       }
     }
   end
+
+  def config_stub
+    OpenStruct.new(rabbitmq_host: 'localhost', rabbitmq_port: 5672,
+                   rabbitmq_user: 'guest', rabbitmq_password: 'guest')
+  end
+end
+
+class ConsumerRetiroCancelaVacacionesTest < Minitest::Test
+  def setup
+    @db = FakeDb.new
+    @empleados = FakeEmpleadosRepo.new(
+      'E001' => { 'empleado_id' => 'E001', 'email' => 'juan.perez@empresa.com', 'nombre' => 'Juan', 'estado' => 'ACTIVO' }
+    )
+    @vacaciones = FakeVacacionesRepo.new([
+                                            { 'id' => 'V-2026-0001', 'empleadoId' => 'E001', 'fechaInicio' => '2026-12-15',
+                                              'fechaFin' => '2026-12-30', 'estado' => 'PROGRAMADA', 'fechaCreacion' => '2026-09-20T10:00:00Z' },
+                                            { 'id' => 'V-2026-0002', 'empleadoId' => 'E001', 'fechaInicio' => '2026-10-10',
+                                              'fechaFin' => '2026-10-20', 'estado' => 'EN_CURSO', 'fechaCreacion' => '2026-09-20T10:00:00Z' },
+                                            { 'id' => 'V-2026-0003', 'empleadoId' => 'E001', 'fechaInicio' => '2026-08-01',
+                                              'fechaFin' => '2026-08-10', 'estado' => 'PROGRAMADA', 'fechaCreacion' => '2026-07-20T10:00:00Z' },
+                                            { 'id' => 'V-2026-0004', 'empleadoId' => 'E002', 'fechaInicio' => '2026-12-15',
+                                              'fechaFin' => '2026-12-30', 'estado' => 'PROGRAMADA', 'fechaCreacion' => '2026-09-20T10:00:00Z' }
+                                          ])
+    @consumer = ConsumerStub.new(@db, @empleados, Logger.new(nil), config_stub, @vacaciones)
+  end
+
+  def test_retiro_cancela_solo_programadas_futuras_del_empleado
+    envelope = {
+      'id' => 'evt-retiro-1', 'type' => 'empleado.retirado', 'version' => '1.0',
+      'occurredAt' => '2026-09-21T14:30:00Z', 'producer' => 'empleados-service',
+      'data' => { 'id' => 'E001', 'nombre' => 'Juan', 'email' => 'juan.perez@empresa.com',
+                  'estado' => 'RETIRADO', 'fechaRetiro' => '2026-09-21T14:30:00Z' }
+    }
+    resultado = @consumer.procesar_mensaje_publico(FakeChannel.new, FakeDeliveryInfo.new(1), JSON.generate(envelope))
+
+    assert_equal :procesado, resultado
+    assert_equal 'RETIRADO', @empleados.buscar('E001')['estado']
+    # futura PROGRAMADA -> CANCELADA (ya no figura como vigente)
+    assert_equal 'CANCELADA', @vacaciones.buscar('V-2026-0001')['estado']
+    # EN_CURSO no se toca (caso borde Reto 5)
+    assert_equal 'EN_CURSO', @vacaciones.buscar('V-2026-0002')['estado']
+    # PROGRAMADA pasada no se toca
+    assert_equal 'PROGRAMADA', @vacaciones.buscar('V-2026-0003')['estado']
+    # otro empleado no se toca
+    assert_equal 'PROGRAMADA', @vacaciones.buscar('V-2026-0004')['estado']
+  end
+
+  def test_retiro_usa_occurred_at_cuando_no_hay_fecha_retiro
+    envelope = {
+      'id' => 'evt-retiro-2', 'type' => 'empleado.retirado', 'version' => '1.0',
+      'occurredAt' => '2026-09-21T14:30:00Z', 'producer' => 'empleados-service',
+      'data' => { 'id' => 'E001', 'nombre' => 'Juan', 'email' => 'juan.perez@empresa.com', 'estado' => 'RETIRADO' }
+    }
+    resultado = @consumer.procesar_mensaje_publico(FakeChannel.new, FakeDeliveryInfo.new(1), JSON.generate(envelope))
+    assert_equal :procesado, resultado
+    assert_equal 'CANCELADA', @vacaciones.buscar('V-2026-0001')['estado']
+  end
+
+  def test_retiro_duplicado_no_cancela_dos_veces
+    body = JSON.generate({
+                            'id' => 'evt-retiro-dup', 'type' => 'empleado.retirado', 'version' => '1.0',
+                            'occurredAt' => '2026-09-21T14:30:00Z', 'producer' => 'empleados-service',
+                            'data' => { 'id' => 'E001', 'nombre' => 'Juan', 'email' => 'juan.perez@empresa.com',
+                                        'estado' => 'RETIRADO', 'fechaRetiro' => '2026-09-21T14:30:00Z' }
+                          })
+    channel = FakeChannel.new
+    assert_equal :procesado, @consumer.procesar_mensaje_publico(channel, FakeDeliveryInfo.new(1), body)
+    assert_equal :duplicado, @consumer.procesar_mensaje_publico(channel, FakeDeliveryInfo.new(2), body)
+    assert_equal 1, @empleados.retirados.size
+    assert_equal 1, @vacaciones.canceladas.count { |p| p['id'] == 'V-2026-0001' }
+  end
+
+  private
 
   def config_stub
     OpenStruct.new(rabbitmq_host: 'localhost', rabbitmq_port: 5672,

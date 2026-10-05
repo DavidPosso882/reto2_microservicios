@@ -17,11 +17,12 @@ module Vacaciones
     BACKOFF_INICIAL = 2
     BACKOFF_MAX = 30
 
-    def initialize(db, empleados_repo, logger, config, sleep_fn: ->(s) { sleep(s) })
+    def initialize(db, empleados_repo, logger, config, vacaciones_repo = nil, sleep_fn: ->(s) { sleep(s) })
       @db = db
       @empleados = empleados_repo
       @logger = logger
       @config = config
+      @vacaciones = vacaciones_repo
       @sleep_fn = sleep_fn
       @stop = false
     end
@@ -92,7 +93,7 @@ module Vacaciones
           next
         end
 
-        aplicar_evento(type, envelope['data'] || {})
+        aplicar_evento(type, envelope['data'] || {}, envelope['occurredAt'])
         conn.exec_params('INSERT INTO eventos_procesados (id) VALUES ($1)', [event_id])
       end
 
@@ -112,12 +113,21 @@ module Vacaciones
 
     private
 
-    def aplicar_evento(type, data)
+    def aplicar_evento(type, data, occurred_at = nil)
       case type
       when 'empleado.creado'
         @empleados.upsert(data)
       when 'empleado.retirado'
         @empleados.marcar_retirado(data)
+        # Las PROGRAMADA futuras del retirado no pueden seguir vigentes:
+        # se cancelan en la misma transacción (auditoría conserva CANCELADA).
+        # EN_CURSO no se toca (caso borde Reto 5: debe llegar a FINALIZADA
+        # sin reactivar la cuenta).
+        if @vacaciones
+          fecha_retiro = data['fechaRetiro'] || occurred_at
+          canceladas = @vacaciones.cancelar_futuras_por_retiro(data['id'], fecha_retiro)
+          @logger.info("[consumer] retiro #{data['id']}: #{canceladas.size} vacaciones futuras canceladas")
+        end
       end
     end
   end
