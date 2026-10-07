@@ -37,6 +37,12 @@ DEFAULT_E2E_USER_PASSWORD = "User1234"
 # idempotente, antes de registrar empleados E2E.
 E2E_DEPARTMENT_ID = "E2E-P3-DEPT"
 
+# Departamento sintético del Punto 4 (onboarding asíncrono). Se asegura igual
+# que el de P3 (GET; si da 404 se crea con ADMIN) y lo usan todos los
+# escenarios de onboarding como único estado compartido: los empleados siguen
+# siendo únicos por escenario.
+E2E_P4_DEPARTMENT_ID = "E2E-P4-DEPT"
+
 
 def base_url() -> str:
     """URL del gateway sin barra final."""

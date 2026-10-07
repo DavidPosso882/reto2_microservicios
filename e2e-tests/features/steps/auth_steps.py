@@ -52,50 +52,52 @@ Si faltan, el escenario falla con un mensaje que indica la variable esperada.
 from __future__ import annotations
 
 import re
-import time
 
 from behave import given
 
 from support import config
+from support.polling import TimeoutException, esperar_hasta_que
 
 # El mensaje de la notificación incluye el JWT de reset en prosa; se extraen
 # sus tres segmentos base64url (header.payload.firma).
 _RESET_TOKEN_RE = re.compile(r"([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)")
 
-# Espera acotada del evento asíncrono empleado.creado -> cuenta -> notificación.
-_USER_RESET_TIMEOUT_S = 30.0
-_USER_RESET_INTERVAL_S = 0.5
-
 
 def _esperar_reset_token(context, empleado_id):
     """Espera a que llegue la notificación de activación y extrae el token.
 
-    Polling simple y acotado (solo para este paso de preparación): el flujo de
-    negocio del Punto 3 es síncrono; lo asíncrono es la creación de la cuenta
-    por RabbitMQ. Devuelve el token o falla con diagnóstico si se agota el
-    timeout.
+    Reutiliza el helper de polling del Punto 4 (``esperar_hasta_que``): evalúa
+    de inmediato y reintenta cada 2 s hasta ~30 s. El flujo de negocio del
+    Punto 3 es síncrono; lo asíncrono es la creación de la cuenta por
+    RabbitMQ y su notificación. Devuelve el token o falla con diagnóstico si
+    se agota el presupuesto.
     """
-    limite = time.monotonic() + _USER_RESET_TIMEOUT_S
-    ultimo_estado = None
-    intentos = 0
-    while time.monotonic() < limite:
-        intentos += 1
-        respuesta = context.api.get(f"/notificaciones/{empleado_id}")
-        ultimo_estado = respuesta.status_code
-        if respuesta.status_code == 200:
-            for notificacion in respuesta.json():
-                coincidencia = _RESET_TOKEN_RE.search(notificacion.get("mensaje", ""))
-                if coincidencia:
-                    return coincidencia.group(1)
-        time.sleep(_USER_RESET_INTERVAL_S)
+    ultimo_estado = {"codigo": None}
 
-    raise AssertionError(
-        f"No llegó la notificación con el token de activación de {empleado_id!r} "
-        f"en {_USER_RESET_TIMEOUT_S:.0f}s (GET /notificaciones/{empleado_id} "
-        f"respondió {ultimo_estado} en el último intento, {intentos} sondeos). "
-        "¿Está auth-service consumiendo empleado.creado y el consumer de "
-        "notificaciones levantado?"
-    )
+    def condicion():
+        respuesta = context.api.get(f"/notificaciones/{empleado_id}")
+        ultimo_estado["codigo"] = respuesta.status_code
+        if respuesta.status_code != 200:
+            return None
+        for notificacion in respuesta.json():
+            coincidencia = _RESET_TOKEN_RE.search(notificacion.get("mensaje", ""))
+            if coincidencia:
+                return coincidencia.group(1)
+        return None
+
+    try:
+        return esperar_hasta_que(
+            condicion,
+            descripcion=(
+                f"la notificación con el token de activación de {empleado_id!r}"
+            ),
+        )
+    except TimeoutException as exc:
+        raise TimeoutException(
+            f"{exc} Último GET /notificaciones/{empleado_id!r}: "
+            f"HTTP {ultimo_estado['codigo']}. ¿Está auth-service consumiendo "
+            "empleado.creado y el consumer de notificaciones levantado?"
+        ) from exc
 
 
 def _token_de_respuesta(respuesta, contexto):

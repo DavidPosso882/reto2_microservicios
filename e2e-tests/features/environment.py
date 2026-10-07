@@ -15,6 +15,14 @@ antes de cada uno. Aquí se deja explícito el estado limpio:
   activada por el flujo del Punto 3 (``None`` hasta que se cree).
 * ``context.created_employee_id``: empleado dado de alta por el escenario
   ADMIN, usado por el DELETE (``None`` hasta que se cree).
+* ``context.onboarding_employee_id`` / ``context.onboarding_email``: empleado
+  y email únicos del escenario de onboarding del Punto 4 (``None`` hasta que
+  se registren).
+* ``context.onboarding_security_notification``: notificación de tipo SEGURIDAD
+  con el token de activación, ya esperada con polling (``None`` hasta que
+  llegue). Es la prueba observable de que auth-service creó la cuenta.
+* ``context.onboarding_welcome_notification``: notificación BIENVENIDA del
+  medio email simulado, ya esperada con polling (``None`` hasta que llegue).
 * ``context.last_response``: última respuesta HTTP observada.
 
 Los valores de ``BASE_URL`` y ``SMOKE_PATH`` se leen del entorno en cada
@@ -40,6 +48,10 @@ def before_scenario(context, scenario):
     context.user_employee_id = None
     context.user_email = None
     context.created_employee_id = None
+    context.onboarding_employee_id = None
+    context.onboarding_email = None
+    context.onboarding_security_notification = None
+    context.onboarding_welcome_notification = None
     context.last_response = None
 
 

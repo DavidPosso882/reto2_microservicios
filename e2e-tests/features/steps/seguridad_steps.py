@@ -51,11 +51,13 @@ def _empleado_de_prueba(context, prefijo):
 
 @given('que existe el departamento "{departamento_id}"')
 def step_departamento_disponible(context, departamento_id):
-    """Asegura el departamento compartido E2E (idempotente) usando ADMIN.
+    """Asegura el departamento E2E pedido (idempotente) usando ADMIN.
 
-    En un stack recién levantado la tabla de departamentos está vacía y sin
-    departamento válido el POST /empleados daría 400. Si ya existe (corridas
-    anteriores), el GET devuelve 200 y no se vuelve a crear.
+    Reutilizado por los Puntos 3 y 4: el feature indica el id
+    (``E2E-P3-DEPT`` / ``E2E-P4-DEPT``). En un stack recién levantado la tabla
+    de departamentos está vacía y sin departamento válido el POST /empleados
+    daría 400. Si ya existe (corridas anteriores), el GET devuelve 200 y no se
+    vuelve a crear.
     """
     token = context.tokens.get("admin")
     assert token, (
@@ -70,9 +72,10 @@ def step_departamento_disponible(context, departamento_id):
             "/departamentos",
             json={
                 "id": departamento_id,
-                "nombre": "Departamento E2E P3",
+                "nombre": f"Departamento {departamento_id}",
                 "descripcion": (
-                    "Departamento compartido por los escenarios RBAC del Punto 3"
+                    "Departamento sintético del proyecto E2E, asegurado de "
+                    "forma idempotente por el Antecedentes"
                 ),
             },
         )

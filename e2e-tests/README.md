@@ -4,10 +4,11 @@ Proyecto **independiente** del stack (no toca compose, `.env` ni servicios):
 pruebas de extremo a extremo en Python con **Behave** (Gherkin en español) y
 **requests**, apuntando al **gateway** en `http://localhost:8080`.
 
-Estado P2+P3: humo verde (1 escenario) y seguridad RBAC verde (4 escenarios).
-El polling de eventos asíncronos de negocio queda para P4 (ver
-`features/support/polling.py`); el Punto 3 solo usa una espera acotada en la
-preparación del token USER. Los escenarios RBAC son síncronos (sin polling).
+Estado P2+P3+P4: humo verde (1 escenario), seguridad RBAC verde (4) y
+onboarding asíncrono verde (5). El polling real vive en
+`features/support/polling.py` y lo comparten la activación USER del P3 y los
+escenarios `eventualmente` del P4; los escenarios RBAC siguen siendo
+síncronos (sin polling).
 
 ## Estructura
 
@@ -19,14 +20,16 @@ e2e-tests/
 │   ├── environment.py          # hooks: contexto limpio + run_id único por escenario
 │   ├── humo.feature            # escenario de humo (# language: es)
 │   ├── seguridad.feature       # RBAC: 401 sin token, 403 USER, ADMIN 200/201/200
+│   ├── onboarding.feature      # P4: alta -> auth + notificación + reset/login, 5 escenarios
 │   ├── steps/
 │   │   ├── common_steps.py     # sistema operativo / código de respuesta
 │   │   ├── auth_steps.py       # login (Background) + activación de cuenta USER real
-│   │   └── seguridad_steps.py  # pasos RBAC del Punto 3
+│   │   ├── seguridad_steps.py  # pasos RBAC del Punto 3 (login/depto reutilizados)
+│   │   └── onboarding_steps.py # pasos asíncronos del Punto 4 (eventualmente)
 │   └── support/
-│       ├── config.py           # BASE_URL, credenciales por entorno y depto E2E
+│       ├── config.py           # BASE_URL, credenciales por entorno y deptos E2E
 │       ├── api_client.py       # requests.Session + Bearer + GET/POST/PUT/DELETE
-│       └── polling.py          # stub documentado (se implementa en P4)
+│       └── polling.py          # esperar_hasta_que: reintentos, éxito temprano, timeout
 └── reports/                    # generado por behave (gitignored)
 ```
 
@@ -44,6 +47,9 @@ python3.11 -m venv .venv
 
 # solo el feature de seguridad RBAC (requiere ADMIN_* en el entorno)
 .venv/bin/behave features/seguridad.feature
+
+# solo el feature de onboarding asíncrono del Punto 4
+.venv/bin/behave features/onboarding.feature
 ```
 
 `behave` sin flags muestra el resultado (`pretty`) en consola y deja los
@@ -99,7 +105,7 @@ Cada corrida genera:
 * `reports/cucumber.json` — formatter JSON (estilo cucumber), con todos los
   features ejecutados.
 * `reports/TESTS-<feature>.xml` — JUnit XML por feature
-  (`TESTS-humo.xml`, `TESTS-seguridad.xml`).
+  (`TESTS-humo.xml`, `TESTS-seguridad.xml`, `TESTS-onboarding.xml`).
 * consola — formatter `pretty`.
 
 `reports/` está gitignored: los reportes no se commitean. El reporte HTML
@@ -168,9 +174,10 @@ activo` reproduce el flujo real del Reto 5:
    -> 201).
 2. El evento `empleado.creado` crea la cuenta USER `SUSPENDIDA_TEMPORAL` en
    auth-service (asíncrono por RabbitMQ).
-3. Se espera (polling acotado de hasta 30 s) la notificación de
-   `usuario.creado` en `GET /notificaciones/{id}` y se extrae de su mensaje el
-   token de activación.
+3. Se espera con `esperar_hasta_que` (éxito temprano, reintentos cada 2 s,
+   hasta ~30 s) la notificación de `usuario.creado` en
+   `GET /notificaciones/{id}` y se extrae de su mensaje el token de
+   activación.
 4. `POST /auth/reset-password` activa la cuenta con `E2E_USER_PASSWORD`
    (default `User1234`, no es un secreto real).
 5. `POST /auth/login` devuelve el access token USER real, que se usa como
@@ -182,11 +189,81 @@ datos llevan el sufijo (`E2E-P3-<run_id>`, `E2E-P3-USER-<run_id>`,
 nunca chocan. El departamento compartido `E2E-P3-DEPT` se crea una sola vez
 (la primera corrida) y luego se reutiliza.
 
+## Onboarding asíncrono (Punto 4)
+
+`features/onboarding.feature` verifica el ciclo de incorporación real contra
+el stack levantado, en 5 escenarios independientes con `Antecedentes` (login
+ADMIN + departamento `E2E-P4-DEPT` asegurado con el paso reutilizado del P3):
+
+| Escenario | Qué verifica |
+|---|---|
+| El alta crea la cuenta del usuario en auth (eventualmente) | `POST /empleados` -> 201; polling hasta la notificación `SEGURIDAD` que auth publica (`usuario.creado`) tras persistir la cuenta, con reset token |
+| El alta genera la notificación de bienvenida por el medio simulado (eventualmente) | polling hasta la notificación `BIENVENIDA` (destinatario email, `empleadoId`, mensaje y `fechaEnvio`) |
+| El empleado nuevo establece su contraseña y puede iniciar sesión | reset token de la notificación -> `POST /auth/reset-password` -> 200; `POST /auth/login` -> 200 con rol USER y estado ACTIVA |
+| El alta con un departamento inexistente es rechazada | `POST /empleados` con `departamentoId` inexistente -> **400** |
+| El alta con campos obligatorios faltantes es rechazada | `POST /empleados` sin `email` ni `numeroEmpleado` -> **400** |
+
+Códigos observados contra el stack levantado (no inventados):
+
+| Caso | Endpoint | Código |
+|---|---|---|
+| Alta válida (ADMIN) | `POST /empleados` | 201 |
+| Cuenta creada por auth (evento `usuario.creado`) | `GET /notificaciones/{empleadoId}` | 200 con notificación `SEGURIDAD` + token |
+| Bienvenida del medio email simulado | `GET /notificaciones/{empleadoId}` | 200 con notificación `BIENVENIDA` |
+| Establecer password con el token | `POST /auth/reset-password` | 200 |
+| Login con la password establecida | `POST /auth/login` | 200 |
+| Departamento inexistente | `POST /empleados` | **400** (`El departamento con id '...' no existe`) |
+| Campos faltantes (`email`, `numeroEmpleado`) | `POST /empleados` | **400** (`Datos inválidos: ... obligatorio`) |
+
+"auth creó el usuario" no se puede leer por HTTP: auth-service no expone un
+listado de usuarios. La evidencia observable es la notificación `SEGURIDAD`
+del evento `usuario.creado`, que auth publica justo después de persistir la
+cuenta `SUSPENDIDA_TEMPORAL` y que incluye el reset token. El empleado es
+único por escenario (`E2E-P4-<run_id>`), así que esa notificación no puede
+venir de otro alta.
+
+Independencia: cada escenario usa el `run_id` (uuid4) de `before_scenario` en
+`id`, `email` y `numeroEmpleado`; los escenarios inválidos agregan sufijos
+(`-DEPT`, `-FALTANTE`). El único estado compartido es el departamento
+`E2E-P4-DEPT`, idempotente. Ejecución:
+
+```bash
+cd e2e-tests
+ADMIN_EMAIL=... ADMIN_PASSWORD=... .venv/bin/behave features/onboarding.feature
+```
+
 ## Polling
 
-No se implementa como helper de negocio en P2/P3. `support/polling.py` queda
-como stub documentado que falla explícitamente si se usa; el helper real
-(`wait_until(...)` con timeout e intervalo) llega en P4 junto con los flujos
-asíncronos. El Punto 3 solo usa una espera acotada dentro del paso de
-preparación del token USER (creación de cuenta por RabbitMQ); los escenarios
-RBAC en sí son síncronos.
+`features/support/polling.py` expone el helper real del Punto 4:
+
+```python
+esperar_hasta_que(
+    condicion,                 # callable sin args: sondea y devuelve algo truthy si ya ocurrió
+    descripcion="la condición",
+    max_intentos=15,
+    intervalo_ms=2000,
+    timeout_s=30.0,
+)  # -> primer resultado truthy; TimeoutException con diagnóstico si se agota
+```
+
+Diseño y parámetros elegidos:
+
+* **Éxito temprano**: la condición se evalúa de inmediato; si el evento ya fue
+  procesado (caso habitual, <1 s) el escenario continúa sin penalización.
+* **Reintentos acotados**: 15 intentos cada 2 s = ~28 s en el peor caso,
+  dentro del techo global de 30 s; tolera la latencia de RabbitMQ + los
+  consumidores sin quedarse corto si el stack está ocupado.
+* **Balance velocidad/carga**: sondear cada 2 s agrega poca carga a un flujo
+  cuyo evento típico tarda <1 s; un intervalo más agresivo no vería novedades
+  antes porque el consumidor es el cuello de botella, y sí multiplicaría las
+  peticiones.
+* **Diagnóstico**: `TimeoutException` (subclase de `AssertionError`) informa
+  descripción, intentos, tiempo transcurrido, intervalo, timeout y último
+  resultado/error HTTP.
+* **Sin `time.sleep` en steps**: la única espera es el intervalo entre
+  reintentos del helper; ningún paso duerme un tiempo fijo. También reintenta
+  `requests.RequestException` (hipo transitorio del gateway).
+* `esperarHastaQue` existe como alias camelCase del nombre del enunciado.
+
+La activación USER del P3 (`auth_steps.py`) y los pasos `eventualmente` del P4
+(`onboarding_steps.py`) usan el mismo helper.
