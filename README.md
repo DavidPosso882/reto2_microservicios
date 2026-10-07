@@ -1,3 +1,84 @@
+# Reto 6 — Automatización de Pruebas (pirámide completa y reportes para Jenkins)
+
+Evolución del Reto 5: misma funcionalidad, con una estrategia de pruebas en
+tres niveles que produce reportes estándar listos para Jenkins/Sonar del
+Reto 7. La URL base única sigue siendo **`http://localhost:8080`**; el
+detalle técnico de la suite E2E vive en
+[`e2e-tests/README.md`](e2e-tests/README.md).
+
+## 1. Pirámide: distribución entre niveles
+
+| Nivel | Suite | Qué cubre | Verificado |
+|---|---|---|---|
+| Unitarias + integración | `empleados` — JUnit 5 + Mockito + Testcontainers | reglas de negocio, validaciones, eventos, circuit breaker y repositorio contra **PostgreSQL 16 real** | **87 tests**, 0 fallos; JaCoCo **84,06 %** líneas (269/320) |
+| Unitarias + integración | `vacaciones` — Minitest (stdlib) | validaciones de períodos/solapamiento, endpoints, consumer/publisher | **70 runs**, 297 assertions, 0 fallos; **75,36 %** líneas (260/345) |
+| E2E BDD (cúspide) | `e2e-tests` — Behave + requests | flujos completos por el **gateway**: humo, RBAC, onboarding asíncrono, vacaciones y offboarding | **5 features / 18 escenarios / 116 steps**, 0 fallos en 3 corridas consecutivas |
+
+La base protege la lógica fina sin infraestructura; la integración usa el
+PostgreSQL real porque H2 miente en constraints y sintaxis; la cúspide BDD
+valida el sistema **desplegado** y la asincronía real (RabbitMQ, scheduler,
+polling) que ninguna unitaria ve.
+
+## 2. Contrato de reportes (Jenkins/Sonar — Reto 7)
+
+| Suite | Comando único | Reporte de resultados | Reporte de cobertura |
+|---|---|---|---|
+| empleados | `cd empleados && mvn test` | `empleados/target/surefire-reports/TEST-*.xml` | `empleados/target/site/jacoco/jacoco.xml` (+ `index.html`) |
+| vacaciones | `cd vacaciones && ruby tests/run_all.rb` | `vacaciones/reports/junit.xml` | `vacaciones/reports/coverage/coverage.json` (+ `index.html`) |
+| E2E BDD | `cd e2e-tests && ./run_bdd.sh` | `e2e-tests/reports/TESTS-*.xml` | `e2e-tests/reports/cucumber.json` + `cucumber.html` |
+
+`target/`, `reports/` y `coverage/` están en `.gitignore`: Jenkins los archiva
+como artefactos del build, nunca se versionan. `run_bdd.sh` propaga el exit
+code de Behave (0 verde / 1 fallo), por eso sirve como gate de CI.
+
+## 3. Prerequisitos y ejecución
+
+Requisitos: Docker + Compose (stack de 14 contenedores), Java 21 + Maven 3.9,
+Ruby 3.3 sin gemas, Python 3.11 con el venv de `e2e-tests/` (`behave`,
+`requests`, `behave-html-formatter`).
+
+```bash
+# a) Stack desplegado (una vez, desde la raíz)
+docker compose up --build -d
+curl http://localhost:8080/health                # 200 {"status":"ok","service":"api-gateway"}
+#    stack nuevo: crear el primer ADMIN con /auth/bootstrap (Reto 5 § "Cómo obtener un token")
+
+# b) Un comando por suite (desde la raíz)
+(cd empleados  && mvn test)                      # 87 tests + surefire + JaCoCo
+(cd vacaciones && ruby tests/run_all.rb)         # 70 runs + junit + coverage
+(cd e2e-tests  && python3.11 -m venv .venv \
+                && .venv/bin/pip install -r requirements.txt \
+                && ./run_bdd.sh)                 # 18 escenarios + junit + cucumber json/html
+
+# c) Reportes: rutas exactas en la tabla §2 (gitignored)
+```
+
+`run_bdd.sh` usa por defecto `BASE_URL=http://localhost:8080` y las
+credenciales ADMIN del bootstrap de demo; se sobreescriben por entorno
+(desde `e2e-tests/`):
+
+```bash
+ADMIN_EMAIL=otro@empresa.com ADMIN_PASSWORD=... ./run_bdd.sh
+```
+
+## 4. BDD: qué es, por qué y escenarios cubiertos
+
+BDD (Behavior-Driven Development) escribe la prueba como comportamiento
+observable en lenguaje natural: Gherkin (`Característica > Escenario >
+Dado/Cuando/Entonces`) en español (`# language: es`). El `.feature` es a la
+vez la especificación y la prueba; los pasos se implementan en Python.
+
+Se eligió **Behave + requests** (alternativas: pytest-bdd, Robot Framework,
+Cucumber-JVM) porque el equipo ya usa Python, Gherkin `es` es nativo,
+`requests` hace trivial el polling asíncrono y Behave trae formatters JUnit
+XML / Cucumber JSON de fábrica (HTML con `behave-html-formatter`). Cubre 18
+escenarios: humo (1), RBAC (4), onboarding asíncrono (5), vacaciones y
+scheduler (4), offboarding (4). No se añadió un contenedor `bdd-tests` al
+compose (el PDF lo marca opcional): la suite corre contra el stack levantado
+y se evaluará dockerizarla en el Reto 7 solo si el pipeline lo exige.
+
+---
+
 # Reto 5 — Seguridad y Control de Acceso con JWT (evolución del Reto 4)
 
 Evolución del Reto 4 (comunicación asincrónica por eventos): el sistema suma

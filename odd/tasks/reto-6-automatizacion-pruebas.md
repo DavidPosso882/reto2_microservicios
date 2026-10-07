@@ -58,3 +58,16 @@ e2e-tests/reports/junit.xml + cucumber.json + cucumber.html
 - Humo: `GET /health` -> 200 `{"status":"ok","service":"api-gateway"}`. `behave` 1 feature / 1 scenario / 2 steps passed. Reportes `reports/cucumber.json` + `TESTS-humo.xml` (gitignored).
 - Sondeo: /health 200 elegido; /api-docs 401, /docs 401, /empleados 401 (vivo con auth). Login Background vía `POST /auth/login` listo pero sin credenciales válidas en stack fresco (demo Admin123! da 401, falta bootstrap).
 - Commit P2: `e81a74e` test(reto6) P2 proyecto BDD Behave con humo verde.
+- Docs P2: `f79357d` docs(reto6) evidencia P2 + bootstrap ADMIN verificado.
+
+## P3 — seguridad RBAC (worker+verify)
+- 4 escenarios es: sin token 401, token inválido/malformado 401, USER GET200/POST403/DELETE403, ADMIN GET200/POST201/DELETE200. Token USER real vía POST /empleados + polling usuario.creado 30s + reset + login. IDs E2E-P3-<uuid>. Full humo+seguridad 5 scenarios 30 steps verde.
+- Commit P3: `2def0ba` test(reto6) P3 escenarios seguridad RBAC 4 casos.
+
+## P4 — onboarding async (worker+verify)
+- Polling real `esperar_hasta_que` 15x2s timeout 30s (sin sleep en steps). 5 escenarios: credenciales eventual (vía notificación SEGURIDAD), bienvenida eventual, set password+login 200, depto inexistente 400, faltantes 400. Full 3 features 10 scenarios 56 steps verde (7.1s).
+- Commit P4: `70acef2` test(reto6) P4 onboarding async con polling eventual.
+
+## P5 — vacaciones+offboarding ciclo completo (worker+verify)
+- Vacaciones 4 esc (programación 201+notif, incoherentes 400, solapamiento 400+conflicto, ciclo 401->200) + offboarding 4 esc (retiro 200+notif, login 401 permanente, recover sin token nuevo, auditoría ?estado=RETIRADO 200). Ciclo hoy-hoy: scheduler 60s colapsa en un tick (~3.5ms), ventana ampliada con 8 satélites a ~400ms, polling login 100ms timeout 75s (knob E2E_P5_SCHEDULER_TIMEOUT_S). Polling negativo en ventana 10s. Full 5 features 18 scenarios 116 steps verde x2 (1m12s, 1m37s), verificado 1m41s.
+- Commit P5: `f62ef63` test(reto6) P5 vacaciones y offboarding con ciclo completo.

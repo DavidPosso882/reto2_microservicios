@@ -2,22 +2,26 @@
 
 Proyecto **independiente** del stack (no toca compose, `.env` ni servicios):
 pruebas de extremo a extremo en Python con **Behave** (Gherkin en español) y
-**requests**, apuntando al **gateway** en `http://localhost:8080`.
+**requests**, apuntando al **gateway** en `http://localhost:8080`. Un solo
+comando (`./run_bdd.sh`, wrapper que fija defaults y propaga el exit code de
+Behave) deja **3 reportes**: JUnit XML, Cucumber JSON y HTML navegable.
 
-Estado P2+P3+P4+P5: humo verde (1 escenario), seguridad RBAC verde (4),
+Estado P2..P6: humo verde (1 escenario), seguridad RBAC verde (4),
 onboarding asíncrono verde (5), vacaciones y ciclo de vida (4) y offboarding
-(4). Total: **18 escenarios** independientes en 5 features. El polling real
-vive en `features/support/polling.py` y lo comparten la activación USER del
-P3, los escenarios `eventualmente` del P4, el ciclo del scheduler del P5 y
-las comprobaciones negativas del offboarding; los escenarios RBAC siguen
-siendo síncronos (sin polling).
+(4). Total: **18 escenarios** independientes en 5 features (**116 steps**),
+verificados en **3 corridas consecutivas** (5 features / 18 escenarios / 116
+steps, exit 0). El polling real vive en `features/support/polling.py` y lo
+comparten la activación USER del P3, los escenarios `eventualmente` del P4,
+el ciclo del scheduler del P5 y las comprobaciones negativas del offboarding;
+los escenarios RBAC siguen siendo síncronos (sin polling).
 
 ## Estructura
 
 ```text
 e2e-tests/
-├── behave.ini                  # formatter JSON + junit + pretty a stdout
-├── requirements.txt            # behave, requests (versiones fijadas)
+├── behave.ini                  # formatter JSON + HTML + junit + pretty a stdout
+├── requirements.txt            # behave, behave-html-formatter, requests (fijadas)
+├── run_bdd.sh                  # wrapper: defaults + exit code de behave
 ├── features/
 │   ├── environment.py          # hooks: contexto limpio + run_id único por escenario
 │   ├── humo.feature            # escenario de humo (# language: es)
@@ -36,47 +40,102 @@ e2e-tests/
 │       ├── config.py           # BASE_URL, credenciales por entorno y deptos E2E
 │       ├── api_client.py       # requests.Session + Bearer + GET/POST/PUT/DELETE
 │       └── polling.py          # esperar_hasta_que: reintentos, éxito temprano, timeout
-└── reports/                    # generado por behave (gitignored)
+└── reports/                    # cucumber.json + cucumber.html + TESTS-*.xml (gitignored)
 ```
 
-## Requisitos y ejecución
+## BDD y escenarios cubiertos
 
-Python 3.11+ y el venv local (el stack debe estar levantado aparte):
+**BDD** (Behavior-Driven Development) expresa cada prueba como comportamiento
+observable en lenguaje natural: Gherkin (`Característica > Escenario >
+Dado/Cuando/Entonces`) en español (`# language: es`). El `.feature` es a la vez
+especificación legible por negocio y prueba ejecutable; el paso se implementa
+en Python (`features/steps/`) y el estado se aísla por escenario
+(`environment.py` + `run_id` uuid4).
+
+Se eligió **Behave + requests** porque el equipo ya usa Python (mismo lenguaje
+que pytest en `notificaciones`), Gherkin `es` es nativo, `requests` resuelve el
+polling sin dependencias extra y Behave trae JUnit XML / Cucumber JSON de
+fábrica (HTML con `behave-html-formatter`). Alternativas descartadas:
+pytest-bdd (formatters menos maduros), Robot Framework (DSL propio, no Gherkin
+puro) y Cucumber-JVM (otra JVM para un cliente HTTP).
+
+| Feature | Escenarios | Punto | Qué cubre |
+|---|---|---|---|
+| `humo.feature` | 1 | P2 | gateway vivo y operativo (`GET /health` 200) |
+| `seguridad.feature` | 4 | P3 | 401 sin/invalid/malformed token, 403 USER, 201/200 ADMIN |
+| `onboarding.feature` | 5 | P4 | alta → cuenta auth + BIENVENIDA (eventualmente) → reset/login; 400 de validación |
+| `vacaciones.feature` | 4 | P5 | programación + notificación, 400 de fechas/solape, ciclo del scheduler suspender/reactivar |
+| `offboarding.feature` | 4 | P5 | retiro + notificaciones, bloqueo permanente, recuperación sin efecto, auditoría |
+| **Total** | **18** | | **116 steps** verdes en 3 corridas consecutivas |
+
+Los detalles de cada flujo (códigos observados, polling, satélites del
+scheduler) están en las secciones siguientes.
+
+## Prerequisitos
+
+| Herramienta | Versión usada | Para qué |
+|---|---|---|
+| Docker + Docker Compose | Compose v2 (stack verificado: 14/14 healthy) | levantar el sistema a probar (el stack vive fuera de esta suite) |
+| Python | 3.11 (3.11.15 en la verificación) | venv local: Behave 1.3.3, requests 2.34.2, behave-html-formatter 0.9.10 |
+| Java 21 + Maven 3.9 / Ruby 3.3 | — | opcional: suites de `empleados` y `vacaciones` (ver README raíz) |
+
+## Ejecución exacta (a → d)
+
+a) **Stack desplegado** (desde la raíz; es la única dependencia externa):
+
+```bash
+docker compose up --build -d
+curl http://localhost:8080/health   # → 200 {"status":"ok","service":"api-gateway"}
+# stack nuevo: bootstrapear el ADMIN (README raíz § "Cómo obtener un token")
+```
+
+b) **Entorno** (opcional; el wrapper ya trae defaults):
+
+```bash
+export BASE_URL=http://localhost:8080    # default del wrapper
+export ADMIN_EMAIL=admin@empresa.com     # default demo del bootstrap
+export ADMIN_PASSWORD=Admin123!          # default demo; en Jenkins se inyectan las reales
+```
+
+c) **Comandos** (la primera vez hay que crear el venv):
 
 ```bash
 cd e2e-tests
 python3.11 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 
-# un solo comando (con el venv activado también funciona `behave` a secas)
-.venv/bin/behave
-
-# solo el feature de seguridad RBAC (requiere ADMIN_* en el entorno)
-.venv/bin/behave features/seguridad.feature
-
-# solo el feature de onboarding asíncrono del Punto 4
-.venv/bin/behave features/onboarding.feature
-
-# solo los features del Punto 5 (vacaciones y offboarding)
-.venv/bin/behave features/vacaciones.feature
-.venv/bin/behave features/offboarding.feature
+./run_bdd.sh                               # suite completa: 18 escenarios
+./run_bdd.sh features/seguridad.feature    # un feature puntual
+./run_bdd.sh features/onboarding.feature   # P4
+./run_bdd.sh features/vacaciones.feature   # P5
+./run_bdd.sh features/offboarding.feature  # P5
 ```
 
-`behave` sin flags muestra el resultado (`pretty`) en consola y deja los
-reportes en `reports/`; no hace falta pasar `-f json -o ... --junit ...`
-porque ya está configurado en `behave.ini` (equivale a
-`behave -f json -o reports/cucumber.json --junit --junit-directory reports`,
-añadiendo `pretty` a stdout).
+d) **Reportes**: quedan en `e2e-tests/reports/` (gitignored): `cucumber.html`
+(navegable, abrir en el navegador), `cucumber.json` y `TESTS-<feature>.xml`.
+El contrato completo para Jenkins está en el README raíz.
+
+`./run_bdd.sh` se coloca en `e2e-tests/` sin importar el cwd, exporta por
+defecto `BASE_URL` y las credenciales ADMIN del bootstrap de demo (se
+sobreescriben con `ADMIN_EMAIL`/`ADMIN_PASSWORD`) y hace `exec` de
+`.venv/bin/behave`, así que propaga su exit code. Sin flags, Behave muestra
+`pretty` en consola y deja los 3 reportes porque `behave.ini` equivale a
+`behave -f json -o reports/cucumber.json -f html -o reports/cucumber.html
+--junit --junit-directory reports`, añadiendo `pretty` a stdout.
 
 ## Variables de entorno
 
-Ningún secreto se versiona: credenciales y URL se inyectan por entorno.
+Las credenciales reales no se versionan: se inyectan por entorno y
+`config.py` solo las lee cuando un paso las necesita. El wrapper
+`./run_bdd.sh` trae como default las credenciales de **demo** del bootstrap
+documentadas en el README raíz (se sobreescriben con `ADMIN_EMAIL` /
+`ADMIN_PASSWORD`; en CI/Jenkins se inyectan las reales).
 
 | Variable | Default | Uso |
 |---|---|---|
 | `BASE_URL` | `http://localhost:8080` | URL del gateway |
 | `SMOKE_PATH` | `/health` | Endpoint público del humo |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | (sin default) | Login `"admin"` en Antecedentes |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | demo del bootstrap si no se definen (solo `run_bdd.sh`) | Login `"admin"` en Antecedentes |
 | `USER_EMAIL` / `USER_PASSWORD` | (sin default) | Login `"user"` en Antecedentes (cuentas ya existentes) |
 | `E2E_USER_PASSWORD` | `User1234` | Password de las cuentas USER sintéticas del P3 y del P5 (no es secreto) |
 | `E2E_P5_SENUELOS` | `8` | Cuentas satélite que el ciclo del P5 programa en el mismo tick para ampliar la ventana de suspensión observable |
@@ -90,7 +149,7 @@ Ejemplo local (el escenario de humo no necesita credenciales; seguridad sí):
 
 ```bash
 cd e2e-tests
-ADMIN_EMAIL=admin@empresa.com ADMIN_PASSWORD=... .venv/bin/behave
+ADMIN_EMAIL=admin@empresa.com ADMIN_PASSWORD=... ./run_bdd.sh
 ```
 
 Si un feature usa el Background de login y falta la variable, el escenario
@@ -113,19 +172,45 @@ Se prefiere un 200 real del propio gateway: si no existiera, el humo habría
 aceptado `GET /empleados` → 401 como "gateway vivo" (documentando el motivo),
 pero `/health` ya es público y estable.
 
-## Reportes
+## Reportes (contrato Reto 7)
 
-Cada corrida genera:
+Cada corrida deja en `reports/` (gitignored) los 3 formatos:
 
-* `reports/cucumber.json` — formatter JSON (estilo cucumber), con todos los
-  features ejecutados.
+* `reports/cucumber.json` — Cucumber JSON con los 5 features (Jenkins lo usa
+  como reporte de resultados del nivel E2E).
+* `reports/cucumber.html` — HTML navegable de `behave-html-formatter`
+  (características, escenarios y pasos con estado y duración); se abre
+  directo en el navegador.
 * `reports/TESTS-<feature>.xml` — JUnit XML por feature
   (`TESTS-humo.xml`, `TESTS-seguridad.xml`, `TESTS-onboarding.xml`,
-  `TESTS-vacaciones.xml`, `TESTS-offboarding.xml`).
-* consola — formatter `pretty`.
+  `TESTS-vacaciones.xml`, `TESTS-offboarding.xml`); suman **18 testcases**.
 
-`reports/` está gitignored: los reportes no se commitean. El reporte HTML
-completo queda para P6.
+Además, la consola muestra el resultado con el formatter `pretty`.
+
+Como el wrapper propaga el exit code de Behave (0/1) y los reportes son
+estándar, Jenkins Reto 7 puede publicarlos sin parsers propios:
+
+| Para | Archivo |
+|---|---|
+| Resultados E2E (JUnit) | `e2e-tests/reports/TESTS-*.xml` |
+| Resultados E2E (Cucumber) | `e2e-tests/reports/cucumber.json` |
+| Detalle navegable | `e2e-tests/reports/cucumber.html` |
+
+El resto del contrato (empleados y vacaciones) está en la tabla del README
+raíz; `run_bdd.sh` es el comando único de esta suite.
+
+### Consistencia y gate de CI (verificación P6)
+
+* **3 corridas consecutivas** de `./run_bdd.sh`: 5 features / 18 escenarios /
+  116 steps passed, exit 0 en las 3; el JUnit XML sumó 18 testcases con 0
+  failures y el HTML 116 steps `passed` / 0 `failed`.
+* **Fallo simulado**: se cambió temporalmente un código esperado
+  (`201`→`200` en `features/seguridad.feature`), `./run_bdd.sh
+  features/seguridad.feature` devolvió **exit 1** con el mensaje
+  `ASSERT FAILED: POST http://localhost:8080/empleados devolvió 201, se
+  esperaba 200.`, dejó 1 `<failure>` en `reports/TESTS-seguridad.xml` y un
+  `class="step failed"` en el HTML; el feature se revirtió (diff vacío).
+  Sirve como prueba de que el comando es un gate real de CI.
 
 ## Autenticación en Antecedentes (Background)
 
@@ -245,7 +330,7 @@ Independencia: cada escenario usa el `run_id` (uuid4) de `before_scenario` en
 
 ```bash
 cd e2e-tests
-ADMIN_EMAIL=... ADMIN_PASSWORD=... .venv/bin/behave features/onboarding.feature
+ADMIN_EMAIL=... ADMIN_PASSWORD=... ./run_bdd.sh features/onboarding.feature
 ```
 
 ## Vacaciones y ciclo de vida de la cuenta (Punto 5)
@@ -380,8 +465,8 @@ Independencia: el empleado protagonista es `E2E-P5-<run_id>`; los satélite son
 
 ```bash
 cd e2e-tests
-ADMIN_EMAIL=... ADMIN_PASSWORD=... .venv/bin/behave features/vacaciones.feature
-ADMIN_EMAIL=... ADMIN_PASSWORD=... .venv/bin/behave features/offboarding.feature
+ADMIN_EMAIL=... ADMIN_PASSWORD=... ./run_bdd.sh features/vacaciones.feature
+ADMIN_EMAIL=... ADMIN_PASSWORD=... ./run_bdd.sh features/offboarding.feature
 ```
 
 ## Polling
