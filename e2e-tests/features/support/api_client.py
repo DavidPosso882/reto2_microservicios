@@ -52,6 +52,9 @@ class ApiClient:
     def put(self, path: str, json: Optional[dict] = None, **kwargs: Any) -> requests.Response:
         return self.request("PUT", path, json=json, **kwargs)
 
+    def delete(self, path: str, **kwargs: Any) -> requests.Response:
+        return self.request("DELETE", path, **kwargs)
+
     # -- Ciclo de vida -------------------------------------------------
     def close(self) -> None:
         """Cierra la sesión HTTP del escenario."""

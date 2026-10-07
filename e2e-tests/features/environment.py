@@ -1,4 +1,4 @@
-"""Hooks de Behave del proyecto E2E (Reto 6, P2).
+"""Hooks de Behave del proyecto E2E (Reto 6, P2/P3).
 
 Ciclo de vida del contexto
 --------------------------
@@ -6,8 +6,15 @@ Behave crea un ``context`` nuevo por escenario y llama a ``before_scenario``
 antes de cada uno. Aquí se deja explícito el estado limpio:
 
 * ``context.api``: instancia nueva de :class:`support.api_client.ApiClient`.
+* ``context.run_id``: sufijo uuid4 único por escenario (P3). Los datos de
+  prueba (``E2E-P3-<run_id>``) lo usan para no chocar entre corridas ni entre
+  escenarios, que así quedan independientes.
 * ``context.token``: token vigente del escenario (``None`` al inicio).
 * ``context.tokens``: tokens por rol (por si un escenario usa más de uno).
+* ``context.user_employee_id`` / ``context.user_email``: cuenta USER sintética
+  activada por el flujo del Punto 3 (``None`` hasta que se cree).
+* ``context.created_employee_id``: empleado dado de alta por el escenario
+  ADMIN, usado por el DELETE (``None`` hasta que se cree).
 * ``context.last_response``: última respuesta HTTP observada.
 
 Los valores de ``BASE_URL`` y ``SMOKE_PATH`` se leen del entorno en cada
@@ -15,6 +22,8 @@ escenario (ver ``support/config.py``), sin secretos en los ``.feature``.
 """
 
 from __future__ import annotations
+
+import uuid
 
 from support import config
 from support.api_client import ApiClient
@@ -25,8 +34,12 @@ def before_scenario(context, scenario):
     context.base_url = config.base_url()
     context.smoke_path = config.smoke_path()
     context.api = ApiClient(context.base_url)
+    context.run_id = uuid.uuid4().hex
     context.token = None
     context.tokens = {}
+    context.user_employee_id = None
+    context.user_email = None
+    context.created_employee_id = None
     context.last_response = None
 
 
