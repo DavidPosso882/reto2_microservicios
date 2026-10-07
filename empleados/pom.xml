@@ -80,6 +80,25 @@
             <artifactId>resilience4j-circuitbreaker</artifactId>
             <version>2.2.0</version>
         </dependency>
+
+        <!-- Integración real con PostgreSQL 16 en Docker (Reto 6, Punto 1).
+             Versiones gestionadas por el BOM de Spring Boot 3.2.5. Solo los
+             *IT las usan; las unitarias con Mockito no necesitan Docker. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -100,6 +119,29 @@
                         <include>**/*IT.java</include>
                     </includes>
                 </configuration>
+            </plugin>
+            <!-- Cobertura (Reto 6, Punto 1): agente en el JVM de surefire y
+                 reporte XML/HTML/CSV en target/site/jacoco/. El reporte se liga
+                 a la fase test para que también `mvn test` deje jacoco.xml. -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.12</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

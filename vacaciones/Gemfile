@@ -7,3 +7,12 @@ gem 'rackup', '~> 2.1'
 gem 'puma', '~> 6.4'
 gem 'bunny', '~> 2.22'
 gem 'pg', '~> 1.5'
+
+group :test do
+  # Reportes JUnit XML + cobertura para el Punto 1 del Reto 6.
+  # Son gemas puras Ruby (sin extensiones nativas) compatibles con Ruby 3.3 y
+  # minitest 5; el runner tests/run_all.rb funciona también sin ellas usando la
+  # librería estándar, por lo que la suite no queda atada a `bundle install`.
+  gem 'minitest-junit', '~> 1.0'
+  gem 'simplecov', '~> 0.22'
+end

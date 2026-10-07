@@ -44,4 +44,12 @@ Thumbs.db
 __pycache__/
 *.pyc
 .pytest_cache/
+# Reto 6: reportes generados (contrato Reto 7, no se versionan)
+reports/
+coverage/
+coverage.xml
+coverage.json
+junit.xml
+cucumber.json
+cucumber.html
 evidencias/reto4/compose-logs-*.log
