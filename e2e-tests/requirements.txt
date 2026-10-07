@@ -1,0 +1,5 @@
+# Reto 6 (P2): proyecto BDD independiente del stack.
+# Instalar dentro de e2e-tests/.venv (ver README.md):
+#   python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
+behave==1.3.3
+requests==2.34.2
