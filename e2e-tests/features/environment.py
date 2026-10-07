@@ -23,6 +23,23 @@ antes de cada uno. Aquí se deja explícito el estado limpio:
   llegue). Es la prueba observable de que auth-service creó la cuenta.
 * ``context.onboarding_welcome_notification``: notificación BIENVENIDA del
   medio email simulado, ya esperada con polling (``None`` hasta que llegue).
+* ``context.active_employee_id`` / ``context.active_employee_email`` /
+  ``context.active_employee_password`` /
+  ``context.active_employee_reset_token``: precondición compleja del Punto 5
+  (vacaciones y offboarding). El paso de Antecedentes crea un empleado desde
+  cero, activa su cuenta con el reset token de la notificación y deja la
+  sesión como ADMIN. Los cuatro campos son ``None`` hasta que se ejecute ese
+  paso.
+* ``context.vacation_period_id``: id del período programado por el escenario
+  de vacaciones (``None`` hasta que se programe uno).
+* ``context.vacation_period_dates``: tupla ``(fechaInicio, fechaFin)`` del
+  último período programado (``None`` hasta entonces).
+* ``context.p5_senuelos``: cuentas satélite (empleado + email) creadas por el
+  escenario del ciclo para ampliar la ventana de suspensión observable
+  (``[]`` al inicio).
+* ``context.security_notifications_snapshot``: ids de las notificaciones
+  SEGURIDAD observadas antes de probar la recuperación de contraseña del
+  retirado (``None`` hasta ese momento).
 * ``context.last_response``: última respuesta HTTP observada.
 
 Los valores de ``BASE_URL`` y ``SMOKE_PATH`` se leen del entorno en cada
@@ -52,6 +69,14 @@ def before_scenario(context, scenario):
     context.onboarding_email = None
     context.onboarding_security_notification = None
     context.onboarding_welcome_notification = None
+    context.active_employee_id = None
+    context.active_employee_email = None
+    context.active_employee_password = None
+    context.active_employee_reset_token = None
+    context.vacation_period_id = None
+    context.vacation_period_dates = None
+    context.p5_senuelos = []
+    context.security_notifications_snapshot = None
     context.last_response = None
 
 

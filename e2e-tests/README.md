@@ -4,11 +4,13 @@ Proyecto **independiente** del stack (no toca compose, `.env` ni servicios):
 pruebas de extremo a extremo en Python con **Behave** (Gherkin en español) y
 **requests**, apuntando al **gateway** en `http://localhost:8080`.
 
-Estado P2+P3+P4: humo verde (1 escenario), seguridad RBAC verde (4) y
-onboarding asíncrono verde (5). El polling real vive en
-`features/support/polling.py` y lo comparten la activación USER del P3 y los
-escenarios `eventualmente` del P4; los escenarios RBAC siguen siendo
-síncronos (sin polling).
+Estado P2+P3+P4+P5: humo verde (1 escenario), seguridad RBAC verde (4),
+onboarding asíncrono verde (5), vacaciones y ciclo de vida (4) y offboarding
+(4). Total: **18 escenarios** independientes en 5 features. El polling real
+vive en `features/support/polling.py` y lo comparten la activación USER del
+P3, los escenarios `eventualmente` del P4, el ciclo del scheduler del P5 y
+las comprobaciones negativas del offboarding; los escenarios RBAC siguen
+siendo síncronos (sin polling).
 
 ## Estructura
 
@@ -21,11 +23,15 @@ e2e-tests/
 │   ├── humo.feature            # escenario de humo (# language: es)
 │   ├── seguridad.feature       # RBAC: 401 sin token, 403 USER, ADMIN 200/201/200
 │   ├── onboarding.feature      # P4: alta -> auth + notificación + reset/login, 5 escenarios
+│   ├── vacaciones.feature      # P5: programación, rechazos y ciclo suspender/reactivar
+│   ├── offboarding.feature     # P5: retiro, bloqueo permanente, recuperación y auditoría
 │   ├── steps/
 │   │   ├── common_steps.py     # sistema operativo / código de respuesta
-│   │   ├── auth_steps.py       # login (Background) + activación de cuenta USER real
+│   │   ├── auth_steps.py       # login, activación USER real y empleado activo del P5
 │   │   ├── seguridad_steps.py  # pasos RBAC del Punto 3 (login/depto reutilizados)
-│   │   └── onboarding_steps.py # pasos asíncronos del Punto 4 (eventualmente)
+│   │   ├── onboarding_steps.py # pasos asíncronos del Punto 4 (eventualmente)
+│   │   ├── vacaciones_steps.py # programación, rechazos y ciclo del scheduler (P5)
+│   │   └── offboarding_steps.py# baja, bloqueo permanente y auditoría (P5)
 │   └── support/
 │       ├── config.py           # BASE_URL, credenciales por entorno y deptos E2E
 │       ├── api_client.py       # requests.Session + Bearer + GET/POST/PUT/DELETE
@@ -50,6 +56,10 @@ python3.11 -m venv .venv
 
 # solo el feature de onboarding asíncrono del Punto 4
 .venv/bin/behave features/onboarding.feature
+
+# solo los features del Punto 5 (vacaciones y offboarding)
+.venv/bin/behave features/vacaciones.feature
+.venv/bin/behave features/offboarding.feature
 ```
 
 `behave` sin flags muestra el resultado (`pretty`) en consola y deja los
@@ -68,7 +78,12 @@ Ningún secreto se versiona: credenciales y URL se inyectan por entorno.
 | `SMOKE_PATH` | `/health` | Endpoint público del humo |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | (sin default) | Login `"admin"` en Antecedentes |
 | `USER_EMAIL` / `USER_PASSWORD` | (sin default) | Login `"user"` en Antecedentes (cuentas ya existentes) |
-| `E2E_USER_PASSWORD` | `User1234` | Password de la cuenta USER sintética que activa el P3 (no es secreto) |
+| `E2E_USER_PASSWORD` | `User1234` | Password de las cuentas USER sintéticas del P3 y del P5 (no es secreto) |
+| `E2E_P5_SENUELOS` | `8` | Cuentas satélite que el ciclo del P5 programa en el mismo tick para ampliar la ventana de suspensión observable |
+| `E2E_P5_LOGIN_INTERVAL_MS` | `100` | Intervalo de reintento del polling de login del P5 (ciclo y offboarding) |
+| `E2E_P5_SCHEDULER_TIMEOUT_S` | `75` | Presupuesto máximo de espera del tick del scheduler (cubre el intervalo de 60 s + procesamiento) |
+| `E2E_P5_REACTIVACION_TIMEOUT_S` | `20` | Presupuesto de espera del login 200 tras la suspensión (ocurre en el mismo tick) |
+| `E2E_P5_VENTANA_NEGATIVA_S` | `10` | Ventana de evidencia de las comprobaciones negativas del offboarding |
 | `HTTP_TIMEOUT` | `10` | Timeout HTTP en segundos |
 
 Ejemplo local (el escenario de humo no necesita credenciales; seguridad sí):
@@ -105,7 +120,8 @@ Cada corrida genera:
 * `reports/cucumber.json` — formatter JSON (estilo cucumber), con todos los
   features ejecutados.
 * `reports/TESTS-<feature>.xml` — JUnit XML por feature
-  (`TESTS-humo.xml`, `TESTS-seguridad.xml`, `TESTS-onboarding.xml`).
+  (`TESTS-humo.xml`, `TESTS-seguridad.xml`, `TESTS-onboarding.xml`,
+  `TESTS-vacaciones.xml`, `TESTS-offboarding.xml`).
 * consola — formatter `pretty`.
 
 `reports/` está gitignored: los reportes no se commitean. El reporte HTML
@@ -232,6 +248,142 @@ cd e2e-tests
 ADMIN_EMAIL=... ADMIN_PASSWORD=... .venv/bin/behave features/onboarding.feature
 ```
 
+## Vacaciones y ciclo de vida de la cuenta (Punto 5)
+
+`features/vacaciones.feature` cubre la programación, los rechazos reales y el
+ciclo completo de suspensión/reactivación, en 4 escenarios independientes con
+`Antecedentes` (login ADMIN + departamento `E2E-P5-DEPT` + empleado activo con
+credenciales creadas desde cero):
+
+| Escenario | Qué verifica |
+|---|---|
+| La programación exitosa se notifica eventualmente | `POST /vacaciones` -> **201** `PROGRAMADA`; polling hasta la notificación `VACACIONES` "Tus vacaciones fueron programadas desde ... hasta ..." |
+| Las fechas incoherentes son rechazadas | `fechaFin` anterior a `fechaInicio` -> **400** con mensaje que nombra ambos extremos |
+| El solapamiento es rechazado | segundo `POST` que pisa un período vigente -> **400** con `conflicto` = período en pugna |
+| Ciclo completo del scheduler | período `hoy -> hoy`: polling hasta **401** (cuenta `SUSPENDIDA_TEMPORAL`), luego polling hasta **200** (reactivada), período `FINALIZADA` y notificaciones `CUENTA` de suspensión (`VACACIONES`) y reactivación (`FIN_VACACIONES`) |
+
+Códigos observados contra el stack levantado (no inventados):
+
+| Caso | Endpoint | Código |
+|---|---|---|
+| Programación válida | `POST /vacaciones` | 201 `PROGRAMADA` |
+| Fechas incoherentes | `POST /vacaciones` | 400 `fechaFin (...) debe ser igual o posterior a fechaInicio (...)` |
+| Solapamiento | `POST /vacaciones` | 400 `El período se solapa ...` + `conflicto` |
+| Inicio de vacaciones | `POST /auth/login` | **401** (cuenta `SUSPENDIDA_TEMPORAL`) |
+| Fin de vacaciones | `POST /auth/login` | **200** (cuenta `ACTIVA` de nuevo) |
+
+### Control del tiempo: cómo inicia y termina un período sin esperar días
+
+El scheduler de vacaciones (`vacaciones/app/scheduler.rb`) corre cada
+`SCHEDULER_INTERVAL_S` segundos (default **60**, configurable por entorno) y
+aplica las transiciones por FECHA con comparación inclusiva:
+`PROGRAMADA` con `fechaInicio <= hoy` -> `EN_CURSO`, y `EN_CURSO` con
+`fechaFin <= hoy` -> `FINALIZADA`. La estrategia de demo del Reto 5 es
+`fechaInicio = fechaFin = hoy`.
+
+Consecuencia medida en el stack real: **las dos transiciones de un período
+`hoy -> hoy` ocurren en el mismo tick** (las notificaciones `vacaciones.iniciadas`
+y `vacaciones.finalizadas` del mismo período quedaron a ~3.5 ms), de modo que la
+ventana de `SUSPENDIDA_TEMPORAL` de una sola cuenta es de pocos milisegundos y
+un polling HTTP no puede observarla de forma determinista. La prueba resuelve
+el disparo sin acoplarse a la frecuencia ni tocar la infraestructura:
+
+1. **Espera el tick con polling**: el paso del ciclo no duerme un tiempo fijo;
+   sondea el login cada `E2E_P5_LOGIN_INTERVAL_MS` (default 100 ms) hasta ver
+   el 401, con presupuesto `E2E_P5_SCHEDULER_TIMEOUT_S` (default **75 s**, que
+   cubre cualquier fase del intervalo de 60 s). El escenario tarda lo que tarde
+   el tick (típico 5-60 s), no un tiempo prefijado.
+2. **Amplifica la ventana con cuentas satélite**: antes de programar el período
+   del protagonista, el paso crea `E2E_P5_SENUELOS` (default **8**) cuentas
+   satélite y las deja existir en auth-service (notificación `SEGURIDAD`); luego
+   programa `hoy -> hoy` para el protagonista y **acto seguido** para los satélite,
+   para que todas las transiciones caigan en el mismo tick. auth-service procesa
+   los eventos en serie, así que la ventana de suspensión del protagonista se
+   estira a ~cantidad × tiempo-de-procesamiento (medido: **~365 ms con 6+1**
+   cuentas y **~480 ms con 8+1**), suficiente para que el polling de 100 ms vea el
+   401 varias veces. Todo es HTTP público contra el gateway: sin SQL, sin broker,
+   sin `sleep` fijo y sin endpoint de disparo manual (el servicio desplegado no
+   lo expone; la tarea del Reto 5 lo había previsto pero no está implementado).
+3. **Conocimiento explícito de la frecuencia**: el único acoplamiento es el
+   timeout de 75 s para recibir el tick; si `SCHEDULER_INTERVAL_S` se sube por
+   encima de ese presupuesto, se ajusta `E2E_P5_SCHEDULER_TIMEOUT_S` sin tocar
+   los escenarios. La prueba nunca asume *cuándo* ocurre el tick dentro del
+   intervalo.
+
+Compromiso documentado: si el tick cayera justo en la ventana de ~30 ms entre
+el `POST` del protagonista y el primero de los satélite, la ventana del
+protagonista quedaría sin amplificar y el escenario fallaría con el
+diagnóstico de timeout (probabilidad teórica ~0.05 %). El mensaje de error
+indica reejecutar el escenario y revisar los consumidores de RabbitMQ.
+
+## Offboarding (Punto 5)
+
+`features/offboarding.feature` cubre la desvinculación completa en 4
+escenarios independientes con el mismo `Antecedentes` del P5:
+
+| Escenario | Qué verifica |
+|---|---|
+| La desvinculación se registra y notifica | `DELETE /empleados/{id}` -> **200** `RETIRADO` + `fechaRetiro`; polling hasta `DESVINCULACION` y hasta la `CUENTA` de baja permanente (`RETIRO`) |
+| El retirado no puede volver a entrar | polling hasta **401** (evento de retiro procesado) + ventana negativa en la que cualquier 200 falla |
+| La recuperación no reactiva | `POST /auth/recover-password` -> **200 uniforme**; polling negativo: no aparece notificación `SEGURIDAD` nueva; el reset token anterior responde **401**; login **401** |
+| Auditoría | `GET /empleados?estado=RETIRADO` -> **200** e incluye el empleado con `estado=RETIRADO` y `fechaRetiro` (baja lógica, nunca se borra) |
+
+Códigos observados contra el stack levantado:
+
+| Caso | Endpoint | Código |
+|---|---|---|
+| Baja lógica (ADMIN) | `DELETE /empleados/{id}` | 200 `RETIRADO` + `fechaRetiro` |
+| Login del retirado | `POST /auth/login` | **401** (uniforme para desconocido/desactivado/clave mala) |
+| Recuperación del retirado | `POST /auth/recover-password` | **200 uniforme**, sin publicar `usuario.recuperacion` |
+| Reset con token anterior al retiro | `POST /auth/reset-password` | **401** (`El token es inválido o expiró`) |
+| Consulta de auditoría | `GET /empleados?estado=RETIRADO` | 200 con el registro retirado |
+
+### Polling negativo (distinguir "todavía no" de "nunca")
+
+Verificar que un empleado "eventualmente no puede entrar" es una condición
+negativa y se resuelve así:
+
+* **Bloqueo por retiro**: se sondea el login con la contraseña correcta hasta
+  ver 401, con timeout explícito de 30 s. El estado inicial comprobado es 200
+  (el Antecedentes inicia sesión), así que un timeout devolviendo 200 se
+  diagnostica como "auth-service aún no procesó `empleado.retirado`" y falla;
+  no se aprueba por accidente.
+* **Permanencia**: tras el 401, una ventana de observación
+  (`E2E_P5_VENTANA_NEGATIVA_S`, default 10 s) muestrea el login varias veces;
+  si algún intento devuelve 200, el escenario falla al instante (la baja debe
+  ser permanente). Si la ventana se agota sin un 200, la ausencia queda
+  evidenciada dentro del presupuesto (no hay forma de probar "para siempre" en un
+  test finito; se documenta el límite).
+* **Sin token nuevo de recuperación**: antes de `recover-password` se
+  fotografían los ids de las notificaciones `SEGURIDAD`; durante la ventana se
+  comprueba que no aparece ninguna nueva. La prueba definitiva complementaria
+  es funcional: el reset token emitido antes del retiro responde **401**.
+* Estas comprobaciones reutilizan `esperar_hasta_que`: la aparición indebida
+  (un 200, un token nuevo) es la condición truthy que hace fallar; la
+  `TimeoutException` se interpreta como "no ocurrió en la ventana".
+
+### Reutilización de pasos y precondiciones complejas
+
+El `Antecedentes` de ambos features encadena pasos ya existentes y solo agrega
+una precondición nueva:
+
+| Paso | Origen |
+|---|---|
+| `Dado que inicio sesión como "admin"` | P3 (`auth_steps.py`), sin cambios |
+| `Y que existe el departamento "E2E-P5-DEPT"` | P3 (`seguridad_steps.py`), parametrizado por id |
+| `Entonces respuesta código N` | P2 (`common_steps.py`), sin cambios |
+| `Y que existe un empleado activo con credenciales establecidas` | Nuevo en `auth_steps.py`; internamente reutiliza el mismo flujo real del P3/P4 (alta ADMIN -> notificación `SEGURIDAD` -> reset con token -> login 200) mediante los helpers `_activar_cuenta`/`_esperar_reset_token` y el polling del P4 |
+
+Independencia: el empleado protagonista es `E2E-P5-<run_id>`; los satélite son
+`E2E-P5-SENUELO-<run_id>-<n>`; el único estado compartido es el departamento
+`E2E-P5-DEPT`, idempotente. Ejecución:
+
+```bash
+cd e2e-tests
+ADMIN_EMAIL=... ADMIN_PASSWORD=... .venv/bin/behave features/vacaciones.feature
+ADMIN_EMAIL=... ADMIN_PASSWORD=... .venv/bin/behave features/offboarding.feature
+```
+
 ## Polling
 
 `features/support/polling.py` expone el helper real del Punto 4:
@@ -265,5 +417,24 @@ Diseño y parámetros elegidos:
   `requests.RequestException` (hipo transitorio del gateway).
 * `esperarHastaQue` existe como alias camelCase del nombre del enunciado.
 
-La activación USER del P3 (`auth_steps.py`) y los pasos `eventualmente` del P4
-(`onboarding_steps.py`) usan el mismo helper.
+La activación USER del P3 (`auth_steps.py`), los pasos `eventualmente` del P4
+(`onboarding_steps.py`) y el Punto 5 completo (`vacaciones_steps.py`,
+`offboarding_steps.py`) usan el mismo helper, con presupuestos por caso:
+
+* **Eventos de cuenta y propagación** (notificaciones, réplica local de
+  vacaciones, cuentas satélite): intervalos cortos (500 ms - 1 s) y techos de
+  15-30 s, porque el evento típico se materializa en <1 s.
+* **Ciclo del scheduler**: el login se sondea cada `E2E_P5_LOGIN_INTERVAL_MS`
+  (default 100 ms) hasta el **401**, con presupuesto
+  `E2E_P5_SCHEDULER_TIMEOUT_S` (default 75 s) para cubrir la espera del tick
+  de 60 s. La reactivación posterior usa un presupuesto corto
+  (`E2E_P5_REACTIVACION_TIMEOUT_S`, default 20 s) porque ocurre en el mismo
+  tick.
+* **Polling negativo** ("eventualmente NO puede entrar"): la condición del
+  helper devuelve un valor truthy cuando ocurre lo indebido (un login 200 en
+  el retirado, una notificación SEGURIDAD nueva en la recuperación) y la
+  `TimeoutException` se interpreta como "no ocurrió dentro de la ventana"
+  (`E2E_P5_VENTANA_NEGATIVA_S`, default 10 s). Así se distingue "todavía no se
+  procesó" (los sondeos previos devolvían el estado esperado y el evento sí
+  aparece) de "nunca se procesará dentro del presupuesto" (timeout, con el
+  diagnóstico en el mensaje de fallo).

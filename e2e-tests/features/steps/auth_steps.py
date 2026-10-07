@@ -38,13 +38,23 @@ el camino real, sin fabricar tokens:
 4. ``POST /auth/login`` devuelve el access token USER de verdad, que queda en
    ``context.tokens["user"]`` y como Bearer de la sesión.
 
+Cómo se obtiene un empleado activo con credenciales (Reto 6, Punto 5)
+--------------------------------------------------------------------
+El paso ``Dado que existe un empleado activo con credenciales establecidas``
+reutiliza el mismo camino real que el P3/P4 (alta ADMIN, notificación
+SEGURIDAD de ``usuario.creado``, reset con el token y login 200), pero crea
+un empleado ``E2E-P5-<run_id>`` en el departamento ``E2E-P5-DEPT`` y deja la
+sesión del escenario como ADMIN. Es la precondición compleja que comparten
+los features de vacaciones y de offboarding, sin depender de otros
+escenarios.
+
 Credenciales (nunca en los ``.feature``)
 ----------------------------------------
 * ``ADMIN_EMAIL`` / ``ADMIN_PASSWORD`` para el rol ``"admin"``.
 * ``USER_EMAIL`` / ``USER_PASSWORD`` para el rol ``"user"`` (cuentas ya
   existentes en el entorno).
-* ``E2E_USER_PASSWORD`` (default ``User1234``) para la cuenta sintética que
-  activa el punto anterior.
+* ``E2E_USER_PASSWORD`` (default ``User1234``) para las cuentas sintéticas
+  que activan los puntos 3 y 5.
 
 Si faltan, el escenario falla con un mensaje que indica la variable esperada.
 """
@@ -111,6 +121,75 @@ def _token_de_respuesta(respuesta, contexto):
     return token
 
 
+def _registrar_empleado(context, *, empleado_id, email, numero_empleado, departamento_id, etiqueta):
+    """POST /empleados (ADMIN) con el payload canónico de una cuenta E2E."""
+    return context.api.post(
+        "/empleados",
+        json={
+            "id": empleado_id,
+            "nombre": etiqueta,
+            "apellido": "E2E",
+            "email": email,
+            "numeroEmpleado": numero_empleado,
+            "cargo": "QA",
+            "area": "Tecnología",
+            "departamentoId": departamento_id,
+            "fechaIngreso": "2026-01-15",
+            "estado": "ACTIVO",
+        },
+    )
+
+
+def _activar_cuenta(context, *, empleado_id, email, password, departamento_id, etiqueta):
+    """Alta + activación real + login; devuelve ``(access_token, reset_token)``.
+
+    Reproduce el camino completo del P3/P4 con endpoints reales y polling:
+
+    1. ``POST /empleados`` (201) con el Bearer ADMIN vigente.
+    2. Espera la notificación SEGURIDAD (``usuario.creado``) y extrae el
+       token de activación del mensaje.
+    3. ``POST /auth/reset-password`` (200) para fijar la contraseña.
+    4. ``POST /auth/login`` (200) y devuelve el access token.
+
+    Requiere que el Bearer ADMIN ya esté aplicado en la sesión del escenario.
+    """
+    alta = _registrar_empleado(
+        context,
+        empleado_id=empleado_id,
+        email=email,
+        numero_empleado=f"EMP-{empleado_id}",
+        departamento_id=departamento_id,
+        etiqueta=etiqueta,
+    )
+    assert alta.status_code == 201, (
+        f"POST /empleados (ADMIN) devolvió {alta.status_code} al crear "
+        f"{empleado_id!r}; se esperaba 201. Cuerpo (recorte): {alta.text[:500]!r}"
+    )
+
+    reset_token = _esperar_reset_token(context, empleado_id)
+
+    reset = context.api.post(
+        "/auth/reset-password",
+        json={"token": reset_token, "nuevaPassword": password},
+    )
+    assert reset.status_code == 200, (
+        f"POST /auth/reset-password devolvió {reset.status_code} al activar "
+        f"{empleado_id!r}; se esperaba 200. Cuerpo (recorte): {reset.text[:500]!r}"
+    )
+
+    # Login limpio: /auth/login es público en el gateway, sin Bearer heredado.
+    context.api.set_token(None)
+    login = context.api.post(
+        "/auth/login", json={"email": email, "password": password}
+    )
+    assert login.status_code == 200, (
+        f"POST /auth/login (cuenta sintética) devolvió {login.status_code} para "
+        f"{email!r}; se esperaba 200. Cuerpo (recorte): {login.text[:500]!r}"
+    )
+
+    return _token_de_respuesta(login, "POST /auth/login (USER sintético)"), reset_token
+
+
 @given('que inicio sesión como "{role}"')
 def step_login(context, role):
     """Login contra /auth/login vía gateway y guarda el Bearer del escenario."""
@@ -155,48 +234,61 @@ def step_token_usuario_activo(context):
     context.user_employee_id = empleado_id
     context.user_email = email
 
-    alta = context.api.post(
-        "/empleados",
-        json={
-            "id": empleado_id,
-            "nombre": "Usuario",
-            "apellido": "E2E",
-            "email": email,
-            "numeroEmpleado": f"EMP-E2E-P3-USER-{run_id}",
-            "cargo": "QA",
-            "area": "Tecnología",
-            "departamentoId": config.E2E_DEPARTMENT_ID,
-            "fechaIngreso": "2026-01-15",
-            "estado": "ACTIVO",
-        },
+    token, _reset_token = _activar_cuenta(
+        context,
+        empleado_id=empleado_id,
+        email=email,
+        password=password_activacion,
+        departamento_id=config.E2E_DEPARTMENT_ID,
+        etiqueta="Usuario",
     )
-    assert alta.status_code == 201, (
-        f"POST /empleados (ADMIN) devolvió {alta.status_code} al crear {empleado_id!r}; "
-        f"se esperaba 201. Cuerpo (recorte): {alta.text[:500]!r}"
-    )
-
-    reset_token = _esperar_reset_token(context, empleado_id)
-
-    reset = context.api.post(
-        "/auth/reset-password",
-        json={"token": reset_token, "nuevaPassword": password_activacion},
-    )
-    assert reset.status_code == 200, (
-        f"POST /auth/reset-password devolvió {reset.status_code} al activar "
-        f"{empleado_id!r}; se esperaba 200. Cuerpo (recorte): {reset.text[:500]!r}"
-    )
-
-    # Login limpio: /auth/login es público en el gateway, sin Bearer heredado.
-    context.api.set_token(None)
-    login = context.api.post(
-        "/auth/login", json={"email": email, "password": password_activacion}
-    )
-    assert login.status_code == 200, (
-        f"POST /auth/login (USER sintético) devolvió {login.status_code} para "
-        f"{email!r}; se esperaba 200. Cuerpo (recorte): {login.text[:500]!r}"
-    )
-
-    token = _token_de_respuesta(login, "POST /auth/login (USER sintético)")
     context.tokens["user"] = token
     context.token = token
     context.api.set_token(token)
+
+
+@given("que existe un empleado activo con credenciales establecidas")
+def step_empleado_activo_con_credenciales(context):
+    """Precondición compleja del Punto 5: empleado + credenciales activas.
+
+    Crea desde cero un empleado único ``E2E-P5-<run_id>`` en el departamento
+    ``E2E-P5-DEPT`` (asegurado antes por el paso reutilizado del P3),
+    espera con polling el token de activación de la notificación SEGURIDAD,
+    establece la contraseña y confirma el login 200. Guarda en el contexto
+    los datos del empleado activo y su reset token (usado después por el
+    escenario de offboarding) y deja la sesión como ADMIN para el resto del
+    escenario.
+
+    Requiere el Bearer ADMIN del Antecedentes: la ruta ``POST /empleados``
+    está restringida a ese rol.
+    """
+    admin_token = context.tokens.get("admin")
+    assert admin_token, (
+        "No hay token ADMIN en el escenario; el Antecedentes debe ejecutar "
+        '`Dado que inicio sesión como "admin"` antes de crear el empleado activo.'
+    )
+    context.api.set_token(admin_token)
+
+    run_id = context.run_id
+    empleado_id = f"E2E-P5-{run_id}"
+    email = f"e2e-p5-{run_id}@empresa.com"
+    password = config.user_activation_password()
+    context.active_employee_id = empleado_id
+    context.active_employee_email = email
+    context.active_employee_password = password
+
+    token, reset_token = _activar_cuenta(
+        context,
+        empleado_id=empleado_id,
+        email=email,
+        password=password,
+        departamento_id=config.E2E_P5_DEPARTMENT_ID,
+        etiqueta="Activo",
+    )
+    context.active_employee_reset_token = reset_token
+    context.tokens["user"] = token
+
+    # El escenario continúa operando como ADMIN (vacaciones y offboarding lo
+    # necesitan); el token USER queda guardado por si un paso lo pidiera.
+    context.token = admin_token
+    context.api.set_token(admin_token)
