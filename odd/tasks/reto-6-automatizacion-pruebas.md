@@ -52,3 +52,9 @@ e2e-tests/reports/junit.xml + cucumber.json + cucumber.html
 - Mutación manual: `fecha_fin < fecha_inicio` -> `>` en `validations.rb` detectada (6 failures, mensaje `Expected: 1 / Actual: 0` en `test_validacion_1`), revertida (`git diff vacaciones/app` vacío).
 - Verificación independiente (verify): Ruby 70/297 exacto, Mockito 11/11 exacto, JaCoCo LINE 84.06% confirmado, surfaces solo P1. Full 87 no re-ejecutado por el verificador (solo subset 11), queda como pendiente de CI.
 - Commit P1: `4383d0a` test(reto6) P1 unitarias vacaciones+empleados con Testcontainers y cobertura.
+
+## P2 — proyecto BDD Behave (2026-10-07, worker+verify)
+- `e2e-tests/` Behave 1.3.3 + requests 2.34.2 en `.venv` (Python 3.11). Gherkin `es`, contexto por escenario (token/last_response), BASE_URL por env default `http://localhost:8080`.
+- Humo: `GET /health` -> 200 `{"status":"ok","service":"api-gateway"}`. `behave` 1 feature / 1 scenario / 2 steps passed. Reportes `reports/cucumber.json` + `TESTS-humo.xml` (gitignored).
+- Sondeo: /health 200 elegido; /api-docs 401, /docs 401, /empleados 401 (vivo con auth). Login Background vía `POST /auth/login` listo pero sin credenciales válidas en stack fresco (demo Admin123! da 401, falta bootstrap).
+- Commit P2: `e81a74e` test(reto6) P2 proyecto BDD Behave con humo verde.
