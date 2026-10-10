@@ -53,3 +53,6 @@ junit.xml
 cucumber.json
 cucumber.html
 evidencias/reto4/compose-logs-*.log
+
+# Coleccion Bruno: vista complementaria local, no se versiona
+pruebas_bruno/
