@@ -1,0 +1,22 @@
+Started by user admin
+[Pipeline] Start of Pipeline
+[Pipeline] node
+Running on Jenkins in /var/jenkins_home/workspace/verificacion-jenkins
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Verificación)
+[Pipeline] echo
+Jenkins está correctamente configurado
+[Pipeline] sh
++ docker --version
+Docker version 26.1.5+dfsg1, build a72d7cd
+[Pipeline] sh
++ docker ps
+CONTAINER ID   IMAGE                 COMMAND                  CREATED         STATUS         PORTS                                                                                      NAMES
+3fb3e7531447   reto2-reto7-jenkins   "/usr/bin/tini -- /u…"   2 minutes ago   Up 2 minutes   0.0.0.0:50000->50000/tcp, :::50000->50000/tcp, 0.0.0.0:9090->8080/tcp, :::9090->8080/tcp   jenkins
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] // node
+[Pipeline] End of Pipeline
+Finished: SUCCESS
