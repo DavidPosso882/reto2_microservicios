@@ -1,0 +1,12 @@
+# Reto 7 P4 — Override solo para CI: nombra las imágenes con el registry local
+# y el tag del build. Uso en la etapa Package:
+#   TAG=$BUILD_NUMBER docker-compose -p reto7-e2e \
+#     -f docker-compose.yml -f docker-compose.registry.yml build <servicio>
+#   TAG=$BUILD_NUMBER docker-compose -p reto7-e2e \
+#     -f docker-compose.yml -f docker-compose.registry.yml push <servicio>
+# Convención: localhost:5000/<servicio>:<BUILD_NUMBER> (+ :latest en 2da pasada).
+services:
+  empleados-service:
+    image: localhost:5000/empleados-service:${TAG:-latest}
+  vacaciones-service:
+    image: localhost:5000/vacaciones-service:${TAG:-latest}

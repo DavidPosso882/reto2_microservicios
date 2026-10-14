@@ -1,7 +1,6 @@
-// Reto 7 P2 — CI de vacaciones-service (Ruby 3.3 + Minitest, stdlib).
-// El runner tests/run_all.rb no necesita bundle install: genera
-// reports/junit.xml y reports/coverage/coverage.xml (Cobertura) con la
-// librería estándar. Misma convención que empleados: fallos -> UNSTABLE.
+// Reto 7 P2/P4 — CI de vacaciones-service (Ruby 3.3 + Minitest, stdlib).
+// Etapas: Checkout -> Build -> Test -> SonarQube -> Package -> E2E Tests.
+// Misma convención que empleados: fallos -> UNSTABLE; resto -> FAILURE.
 pipeline {
     agent {
         docker {
@@ -41,6 +40,63 @@ pipeline {
                         tools: [[parser: 'COBERTURA', pattern: 'vacaciones/reports/coverage/coverage.xml']],
                         sourceCodeRetention: 'EVERY_BUILD'
                     )
+                }
+            }
+        }
+
+        stage('SonarQube') {
+            agent {
+                docker {
+                    image 'sonarsource/sonar-scanner-cli:5.0.1'
+                    args '--network host'
+                }
+            }
+            steps {
+                dir('vacaciones') {
+                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SQ_TOKEN')]) {
+                        sh 'sonar-scanner -Dsonar.login=${SQ_TOKEN} -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300'
+                    }
+                }
+            }
+        }
+
+        stage('Package') {
+            agent {
+                docker {
+                    image 'python:3.11-slim'
+                    args '-v /var/run/docker.sock:/var/run/docker.sock --group-add 983 --network host'
+                }
+            }
+            steps {
+                sh 'python3 scripts/fetch-compose.py'
+                sh 'TAG=${BUILD_NUMBER} .ci-tools/docker-compose -p reto7-e2e -f docker-compose.yml -f docker-compose.registry.yml build vacaciones-service'
+                sh 'TAG=${BUILD_NUMBER} .ci-tools/docker-compose -p reto7-e2e -f docker-compose.yml -f docker-compose.registry.yml push vacaciones-service'
+                sh 'TAG=latest .ci-tools/docker-compose -p reto7-e2e -f docker-compose.yml -f docker-compose.registry.yml build vacaciones-service'
+                sh 'TAG=latest .ci-tools/docker-compose -p reto7-e2e -f docker-compose.yml -f docker-compose.registry.yml push vacaciones-service'
+            }
+        }
+
+        stage('E2E Tests') {
+            agent {
+                docker {
+                    image 'python:3.11-slim'
+                    args '-v /var/run/docker.sock:/var/run/docker.sock --group-add 983 --network host'
+                }
+            }
+            steps {
+                sh 'python3 scripts/fetch-compose.py'
+                sh '.ci-tools/docker-compose -p reto7-e2e -f docker-compose.yml up -d --build api-gateway'
+                sh 'BASE_URL=http://localhost:8080 python3 scripts/wait-for-e2e-ready.py'
+                sh 'cd e2e-tests && ([ -x .venv/bin/behave ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt)) && BASE_URL=http://localhost:8080 ./run_bdd.sh || true'
+            }
+            post {
+                always {
+                    junit 'e2e-tests/reports/TESTS-*.xml'
+                    cucumber(jsonReportDirectory: 'e2e-tests/reports', fileIncludePattern: '**/cucumber.json', buildStatus: 'UNSTABLE')
+                    publishHTML(target: [reportDir: 'e2e-tests/reports', reportFiles: 'cucumber.html', reportName: 'Reporte BDD', keepAll: true, alwaysLinkToLastBuild: true])
+                    sh '.ci-tools/docker-compose -p reto7-e2e logs --no-color > docker-logs.txt || true'
+                    sh '.ci-tools/docker-compose -p reto7-e2e down -v || true'
+                    archiveArtifacts artifacts: 'docker-logs.txt', allowEmptyArchive: true
                 }
             }
         }

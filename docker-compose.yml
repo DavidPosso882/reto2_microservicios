@@ -390,6 +390,17 @@ services:
     networks:
       - microservices-network
 
+  # ── Registro local (Reto 7, P4): las imágenes del pipeline se publican acá ──
+  registry:
+    image: registry:2
+    container_name: docker-registry
+    ports:
+      - "5000:5000"
+    volumes:
+      - registry_data:/var/lib/registry
+    networks:
+      - microservices-network
+
 networks:
   microservices-network:
     driver: bridge
@@ -407,3 +418,4 @@ volumes:
   sonarqube_logs:
   sonarqube_extensions:
   sonar_db_data:
+  registry_data:

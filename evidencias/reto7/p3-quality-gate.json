@@ -1,0 +1,1 @@
+{"projectStatus":{"status":"OK","conditions":[{"status":"OK","metricKey":"coverage","comparator":"LT","errorThreshold":"70","actualValue":"82.6"}],"periods":[],"ignoredConditions":false,"caycStatus":"over-compliant"}}

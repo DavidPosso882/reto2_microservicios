@@ -1,0 +1,8 @@
+[Coverage] Finished coverage processing - adding the action to the build...
+[INFO] 'sonar.coverage.jacoco.xmlReportPaths' is not defined. Using default locations: target/site/jacoco/jacoco.xml,target/site/jacoco-it/jacoco.xml,build/reports/jacoco/test/jacocoTestReport.xml
+[INFO] Sensor Zero Coverage Sensor
+[INFO] Sensor Zero Coverage Sensor (done) | time=0ms
+[INFO] QUALITY GATE STATUS: PASSED - View details on http://localhost:9000/dashboard?id=empleados-service
+[INFO] BUILD SUCCESS
+[INFO] Finished at: 2026-10-14T19:20:15Z
+Finished: SUCCESS

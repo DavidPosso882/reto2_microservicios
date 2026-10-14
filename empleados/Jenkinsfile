@@ -75,15 +75,49 @@ pipeline {
                     // tokens (solo Basic); el scanner 5.x manda Bearer con
                     // sonar.token. Con sonar.login manda Basic y autentica bien.
                     withCredentials([string(credentialsId: 'sonar-token', variable: 'SQ_TOKEN')]) {
-                        sh '''
-                            mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-                                -Dsonar.host.url=http://localhost:9000 \
-                                -Dsonar.login=${SQ_TOKEN} \
-                                -Dsonar.projectKey=empleados-service \
-                                -Dsonar.qualitygate.wait=true \
-                                -Dsonar.qualitygate.timeout=300
-                        '''
+                        sh 'mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.host.url=http://localhost:9000 -Dsonar.login=${SQ_TOKEN} -Dsonar.projectKey=empleados-service -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300'
                     }
+                }
+            }
+        }
+
+        stage('Package') {
+            agent {
+                docker {
+                    image 'python:3.11-slim'
+                    args '-v /var/run/docker.sock:/var/run/docker.sock --group-add 983 --network host'
+                }
+            }
+            steps {
+                sh 'python3 scripts/fetch-compose.py'
+                sh 'TAG=${BUILD_NUMBER} .ci-tools/docker-compose -p reto7-e2e -f docker-compose.yml -f docker-compose.registry.yml build empleados-service'
+                sh 'TAG=${BUILD_NUMBER} .ci-tools/docker-compose -p reto7-e2e -f docker-compose.yml -f docker-compose.registry.yml push empleados-service'
+                sh 'TAG=latest .ci-tools/docker-compose -p reto7-e2e -f docker-compose.yml -f docker-compose.registry.yml build empleados-service'
+                sh 'TAG=latest .ci-tools/docker-compose -p reto7-e2e -f docker-compose.yml -f docker-compose.registry.yml push empleados-service'
+            }
+        }
+
+        stage('E2E Tests') {
+            agent {
+                docker {
+                    image 'python:3.11-slim'
+                    args '-v /var/run/docker.sock:/var/run/docker.sock --group-add 983 --network host'
+                }
+            }
+            steps {
+                sh 'python3 scripts/fetch-compose.py'
+                sh '.ci-tools/docker-compose -p reto7-e2e -f docker-compose.yml up -d --build api-gateway'
+                sh 'BASE_URL=http://localhost:8080 python3 scripts/wait-for-e2e-ready.py'
+                sh 'cd e2e-tests && ([ -x .venv/bin/behave ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt)) && BASE_URL=http://localhost:8080 ./run_bdd.sh || true'
+            }
+            post {
+                always {
+                    junit 'e2e-tests/reports/TESTS-*.xml'
+                    cucumber(jsonReportDirectory: 'e2e-tests/reports', fileIncludePattern: '**/cucumber.json', buildStatus: 'UNSTABLE')
+                    publishHTML(target: [reportDir: 'e2e-tests/reports', reportFiles: 'cucumber.html', reportName: 'Reporte BDD', keepAll: true, alwaysLinkToLastBuild: true])
+                    sh '.ci-tools/docker-compose -p reto7-e2e logs --no-color > docker-logs.txt || true'
+                    sh '.ci-tools/docker-compose -p reto7-e2e down -v || true'
+                    archiveArtifacts artifacts: 'docker-logs.txt', allowEmptyArchive: true
                 }
             }
         }
