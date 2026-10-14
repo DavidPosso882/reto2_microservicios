@@ -11,7 +11,11 @@ pipeline {
             image 'maven:3.9-eclipse-temurin-21'
             // Socket para Testcontainers (BD real en integración) + caché de
             // dependencias para no descargar todo en cada build.
-            args '-v /var/run/docker.sock:/var/run/docker.sock -v jenkins-m2:/root/.m2'
+            // --group-add 983: el agente corre como uid 1000 y el socket del host
+            // es root:docker(983) 660; sin este grupo suplementario Testcontainers
+            // reporta "DOCKER_HOST is not listening" (permiso denegado).
+            // 983 es el GID de docker en el host de CI (ver jenkins/Dockerfile).
+            args '-v /var/run/docker.sock:/var/run/docker.sock -v jenkins-m2:/root/.m2 --group-add 983'
         }
     }
 
