@@ -11,11 +11,11 @@ pipeline {
             image 'maven:3.9-eclipse-temurin-21'
             // Socket para Testcontainers (BD real en integración) + caché de
             // dependencias para no descargar todo en cada build.
-            // --group-add 983: el agente corre como uid 1000 y el socket del host
-            // es root:docker(983) 660; sin este grupo suplementario Testcontainers
-            // reporta "DOCKER_HOST is not listening" (permiso denegado).
-            // 983 es el GID de docker en el host de CI (ver jenkins/Dockerfile).
-            args '-v /var/run/docker.sock:/var/run/docker.sock -v jenkins-m2:/root/.m2 --group-add 983'
+            // --network host: el firewall del host filtra el tráfico del bridge
+            // hacia los puertos efímeros que Testcontainers publica (hasta un
+            // puerto cerrado da timeout desde el puente); con host network el
+            // agente comparte el stack del host y llega a 127.0.0.1:port.
+            args '-v /var/run/docker.sock:/var/run/docker.sock -v jenkins-m2:/root/.m2 --network host'
         }
     }
 
@@ -43,7 +43,10 @@ pipeline {
                     // TESTCONTAINERS_RYUK_DISABLED: en CI el reaper Ryuk no es
                     // alcanzable desde el agente; la limpieza la hace el shutdown
                     // hook de la JVM al terminar surefire (práctica estándar CI).
-                    sh 'TESTCONTAINERS_RYUK_DISABLED=true mvn verify -Dmaven.test.failure.ignore=true'
+                    // TESTCONTAINERS_HOST_OVERRIDE: con --network host el agente
+                    // ve al host como 127.0.0.1 y así llega a los puertos que
+                    // Testcontainers publica (el firewall filtra el puente).
+                    sh 'TESTCONTAINERS_RYUK_DISABLED=true TESTCONTAINERS_HOST_OVERRIDE=127.0.0.1 mvn verify -Dmaven.test.failure.ignore=true'
                 }
             }
             post {
