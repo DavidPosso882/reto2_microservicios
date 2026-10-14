@@ -60,6 +60,36 @@ pipeline {
                 }
             }
         }
+
+        stage('SonarQube') {
+            steps {
+                dir('empleados') {
+                    // El reporte JaCoCo lo generó la etapa Test en este workspace.
+                    // localhost: el agente usa host network (etapas Build/Test);
+                    // el servidor 'SonarQube' (http://sonarqube:9000) lo usa el
+                    // controller en la etapa Quality Gate.
+                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                        sh '''
+                            mvn sonar:sonar \
+                                -Dsonar.host.url=http://localhost:9000 \
+                                -Dsonar.token=${SONAR_TOKEN} \
+                                -Dsonar.projectKey=empleados-service
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            // En el controller (no en el agente docker): aquí sí resuelve
+            // http://sonarqube:9000 del servidor 'SonarQube' configurado por JCasC.
+            agent any
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
     }
 
     post {

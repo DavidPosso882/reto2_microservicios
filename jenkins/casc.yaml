@@ -43,3 +43,22 @@ jobs:
           }
         }
       }
+
+# Reto 7 P3 — Token de SonarQube como credencial Jenkins (el valor llega por
+# entorno SONAR_TOKEN desde .env, nunca queda en git) y servidor SonarQube
+# para el paso waitForQualityGate (resoluble desde el controller).
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - string:
+              scope: GLOBAL
+              id: "sonar-token"
+              secret: "${SONAR_TOKEN}"
+              description: "Token SonarQube para el análisis CI"
+
+sonar:
+  installations:
+    - name: "SonarQube"
+      serverUrl: "http://sonarqube:9000"
+      credentialsId: "sonar-token"
