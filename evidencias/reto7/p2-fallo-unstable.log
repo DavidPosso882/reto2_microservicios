@@ -1,0 +1,4 @@
+70 runs, 200 assertions, 20 failures, 0 errors, 0 skips
+Recording test results
+[Coverage] Successfully parsed file '/var/jenkins_home/workspace/vacaciones-service/vacaciones/reports/coverage/coverage.xml'
+Finished: UNSTABLE
