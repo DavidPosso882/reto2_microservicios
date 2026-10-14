@@ -57,8 +57,5 @@ credentials:
               secret: "${SONAR_TOKEN}"
               description: "Token SonarQube para el análisis CI"
 
-sonar:
-  installations:
-    - name: "SonarQube"
-      serverUrl: "http://sonarqube:9000"
-      credentialsId: "sonar-token"
+# (El servidor SonarQube para waitForQualityGate se configura por script
+# init.groovy.d — el plugin sonar de esta versión no expone raíz CasC.)
