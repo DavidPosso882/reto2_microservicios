@@ -24,7 +24,7 @@ module Vacaciones
       errors << Error.new(message: 'fechaInicio es obligatorio y debe tener formato YYYY-MM-DD') if fecha_inicio.nil?
       errors << Error.new(message: 'fechaFin es obligatorio y debe tener formato YYYY-MM-DD') if fecha_fin.nil?
 
-      if fecha_inicio && fecha_fin && fecha_fin < fecha_inicio
+      if fecha_inicio && fecha_fin && fecha_fin > fecha_inicio
         errors << Error.new(
           message: "fechaFin (#{attrs['fechaFin']}) debe ser igual o posterior a fechaInicio (#{attrs['fechaInicio']})"
         )
