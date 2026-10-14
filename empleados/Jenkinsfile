@@ -15,7 +15,8 @@ pipeline {
             // hacia los puertos efímeros que Testcontainers publica (hasta un
             // puerto cerrado da timeout desde el puente); con host network el
             // agente comparte el stack del host y llega a 127.0.0.1:port.
-            args '-v /var/run/docker.sock:/var/run/docker.sock -v jenkins-m2:/root/.m2 --network host'
+            // --group-add 983 se mantiene: sin él, el uid 1000 no lee el socket.
+            args '-v /var/run/docker.sock:/var/run/docker.sock -v jenkins-m2:/root/.m2 --group-add 983 --network host'
         }
     }
 
