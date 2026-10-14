@@ -91,7 +91,8 @@ pipeline {
             agent {
                 docker {
                     image 'python:3.11-slim'
-                    args '-v /var/run/docker.sock:/var/run/docker.sock --group-add 983 --network host'
+                    // HOME=/tmp: compose crea ~/.docker (uid 1000 sin HOME).
+                    args '-e HOME=/tmp -v /var/run/docker.sock:/var/run/docker.sock --group-add 983 --network host'
                 }
             }
             steps {
@@ -116,7 +117,7 @@ pipeline {
             agent {
                 docker {
                     image 'python:3.11-slim'
-                    args '-v /var/run/docker.sock:/var/run/docker.sock --group-add 983 --network host'
+                    args '-e HOME=/tmp -v /var/run/docker.sock:/var/run/docker.sock --group-add 983 --network host'
                 }
             }
             steps {
