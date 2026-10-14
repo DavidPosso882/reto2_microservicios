@@ -1,0 +1,68 @@
+// Reto 7 P2 — CI de empleados-service (Java 21 + Maven).
+// Etapas: Checkout (automático desde SCM) -> Build -> Test con publicación
+// de resultados (junit) y cobertura (recordCoverage JaCoCo) en post/always,
+// para que el reporte se publique aun cuando las pruebas fallen.
+// Convención: pruebas fallidas -> UNSTABLE (amarillo, lo marca junit);
+// lo que no compila -> FAILURE (rojo). El empaquetado (P4) solo corre en verde.
+pipeline {
+    agent {
+        docker {
+            // Misma toolchain que el Dockerfile del servicio (Java 21 + Maven 3.9).
+            image 'maven:3.9-eclipse-temurin-21'
+            // Socket para Testcontainers (BD real en integración) + caché de
+            // dependencias para no descargar todo en cada build.
+            args '-v /var/run/docker.sock:/var/run/docker.sock -v jenkins-m2:/root/.m2'
+        }
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Código fuente obtenido del SCM configurado en el job'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                dir('empleados') {
+                    sh 'mvn clean compile -DskipTests'
+                }
+            }
+        }
+
+        stage('Test') {
+            steps {
+                dir('empleados') {
+                    // -Dmaven.test.failure.ignore=true: deja que surefire+failsafe
+                    // terminen y generen los XML; es el paso junit quien marca
+                    // el build como UNSTABLE si hay fallos.
+                    sh 'mvn verify -Dmaven.test.failure.ignore=true'
+                }
+            }
+            post {
+                always {
+                    junit 'empleados/target/surefire-reports/*.xml, empleados/target/failsafe-reports/*.xml'
+                    recordCoverage(
+                        tools: [[parser: 'JACOCO', pattern: 'empleados/target/site/jacoco/jacoco.xml']],
+                        sourceCodeRetention: 'EVERY_BUILD'
+                    )
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Pipeline finalizado'
+        }
+        success {
+            echo 'Build y tests exitosos'
+        }
+        unstable {
+            echo 'El build compiló pero hay pruebas fallando'
+        }
+        failure {
+            echo 'El pipeline ha fallado'
+        }
+    }
+}

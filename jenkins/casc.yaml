@@ -1,0 +1,45 @@
+# Reto 7 P2 — Aprovisionamiento de pipelines como código (Opción A: JCasC + job-dsl).
+# Al levantar Jenkins con `docker compose up`, estos jobs ya existen: cada uno
+# lee su Jenkinsfile versionado junto al código (empleados/Jenkinsfile,
+# vacaciones/Jenkinsfile) del repo montado en /workspace, rama del reto.
+# Decisión: JCasC frente a init.groovy.d porque es declarativo, se revisa como
+# YAML y el plugin configuration-as-code ya viene pre-instalado (P1).
+jenkins:
+  systemMessage: "Reto 7 — CI del ecosistema (jobs aprovisionados como código)"
+  numExecutors: 2
+
+jobs:
+  - script: >
+      pipelineJob('empleados-service') {
+        description('CI empleados-service (Java 21 + Maven). Jenkinsfile: empleados/Jenkinsfile.')
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('file:///workspace')
+                }
+                branches('*/reto-7-integracion-continua-jenkins')
+              }
+            }
+            scriptPath('empleados/Jenkinsfile')
+          }
+        }
+      }
+  - script: >
+      pipelineJob('vacaciones-service') {
+        description('CI vacaciones-service (Ruby 3.3 + Minitest). Jenkinsfile: vacaciones/Jenkinsfile.')
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('file:///workspace')
+                }
+                branches('*/reto-7-integracion-continua-jenkins')
+              }
+            }
+            scriptPath('vacaciones/Jenkinsfile')
+          }
+        }
+      }

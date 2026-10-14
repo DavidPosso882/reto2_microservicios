@@ -345,9 +345,16 @@ services:
     volumes:
       - jenkins_data:/var/jenkins_home
       - ./jenkins/init.groovy.d:/var/jenkins_home/init.groovy.d:ro
+      - ./jenkins/casc.yaml:/var/jenkins_home/casc_configs/jobs.yaml:ro
+      # Repo como SCM local (P2, Opción A): los jobs clonan file:///workspace.
+      - ./:/workspace:ro
+      # El worktree resuelve sus objetos en el .git principal del host;
+      # montarlo en la misma ruta absoluta hace que el clone file:// funcione.
+      - /home/david/Documentos/Semestre9/reto2/.git:/home/david/Documentos/Semestre9/reto2/.git:ro
       - /var/run/docker.sock:/var/run/docker.sock   # Acceso al Docker del host
     environment:
-      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false -Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true
+      - CASC_JENKINS_CONFIG=/var/jenkins_home/casc_configs
     networks:
       - microservices-network
 

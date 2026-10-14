@@ -1,0 +1,63 @@
+// Reto 7 P2 — CI de vacaciones-service (Ruby 3.3 + Minitest, stdlib).
+// El runner tests/run_all.rb no necesita bundle install: genera
+// reports/junit.xml y reports/coverage/coverage.xml (Cobertura) con la
+// librería estándar. Misma convención que empleados: fallos -> UNSTABLE.
+pipeline {
+    agent {
+        docker {
+            image 'ruby:3.3-slim'
+            args '-v jenkins-ruby:/usr/local/bundle'
+        }
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Código fuente obtenido del SCM configurado en el job'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                dir('vacaciones') {
+                    // Sin dependencias externas: basta verificar el intérprete.
+                    sh 'ruby -v'
+                }
+            }
+        }
+
+        stage('Test') {
+            steps {
+                dir('vacaciones') {
+                    // El '|| true' deja que el pipeline llegue al bloque post y
+                    // publique el reporte; es el paso junit quien marca UNSTABLE.
+                    sh 'ruby tests/run_all.rb || true'
+                }
+            }
+            post {
+                always {
+                    junit 'vacaciones/reports/junit.xml'
+                    recordCoverage(
+                        tools: [[parser: 'COBERTURA', pattern: 'vacaciones/reports/coverage/coverage.xml']],
+                        sourceCodeRetention: 'EVERY_BUILD'
+                    )
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Pipeline finalizado'
+        }
+        success {
+            echo 'Build y tests exitosos'
+        }
+        unstable {
+            echo 'El build compiló pero hay pruebas fallando'
+        }
+        failure {
+            echo 'El pipeline ha fallado'
+        }
+    }
+}

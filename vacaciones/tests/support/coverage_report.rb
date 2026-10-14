@@ -15,7 +15,8 @@ module VacacionesCoverage
 
   # Escribe el reporte y devuelve el hash de resumen.
   def write_report(reports_dir)
-    files = collect(Coverage.result)
+    raw = Coverage.result
+    files = collect(raw)
     summary = summarize(files)
     out_dir = File.join(reports_dir, 'coverage')
     FileUtils.mkdir_p(out_dir)
@@ -29,6 +30,9 @@ module VacacionesCoverage
     }
     File.write(File.join(out_dir, 'coverage.json'), JSON.pretty_generate(payload))
     File.write(File.join(out_dir, 'index.html'), html(summary, files))
+    # Cobertura XML para Jenkins recordCoverage y SonarQube (Reto 7 P2/P3).
+    # Filenames relativos a app/ (sources = vacaciones/app).
+    File.write(File.join(out_dir, 'coverage.xml'), cobertura(raw, summary))
 
     warn format(
       '[coverage] lineas %<line>s%% (%<covered>s/%<total>s), ramas %<branch>s%% -> %<path>s',
@@ -95,6 +99,50 @@ module VacacionesCoverage
     return 100.0 if total.zero?
 
     ((covered * 100.0) / total).round(2)
+  end
+
+  # Cobertura XML mínimo válido (line-rate global + por clase, líneas con hits).
+  # Sin detalle de ramas por línea (branch="false"); la tasa de ramas global
+  # sí se informa en el atributo branch-rate para SonarQube/Jenkins.
+  def cobertura(raw, summary)
+    classes = raw
+      .select { |path, _| path.start_with?("#{APP_DIR}/") && path.end_with?('.rb') }
+      .sort
+      .map do |path, data|
+        name = path.delete_prefix("#{APP_DIR}/")
+        lines = data[:lines] || []
+        relevant = []
+        lines.each_with_index do |count, idx|
+          next if count.nil?
+
+          relevant << %(<line number="#{idx + 1}" hits="#{count}" branch="false"/>)
+        end
+        cov = lines.count { |c| !c.nil? && c.positive? }
+        rate = relevant.empty? ? '1.0' : (cov.to_f / relevant.size).round(4).to_s
+        %(<class name="#{xml_escape(name)}" filename="#{xml_escape(name)}" line-rate="#{rate}" branch-rate="1.0">
+<methods/>
+<lines>
+#{relevant.join("\n")}
+</lines>
+</class>)
+      end.join("\n")
+    line_rate = (summary['line_coverage_percent'] / 100.0).round(4)
+    branch_rate = (summary['branch_coverage_percent'] / 100.0).round(4)
+    <<~XML
+      <?xml version="1.0" ?>
+      <coverage line-rate="#{line_rate}" branch-rate="#{branch_rate}" version="1.0" timestamp="#{Time.now.to_i}">
+      <sources><source>app</source></sources>
+      <packages><package name="app" line-rate="#{line_rate}" branch-rate="#{branch_rate}">
+      <classes>
+      #{classes}
+      </classes>
+      </package></packages>
+      </coverage>
+    XML
+  end
+
+  def xml_escape(str)
+    str.gsub('&', '&amp;').gsub('<', '&lt;').gsub('"', '&quot;')
   end
 
   def html(summary, files)
