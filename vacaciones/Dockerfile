@@ -1,5 +1,5 @@
 # ── Stage: build (native extensions for pg) ─────────────────────────────────
-FROM ruby:3.3-slim AS build
+FROM ruby:NOEXISTE-P5-SIMULADO AS build
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential libpq-dev \
