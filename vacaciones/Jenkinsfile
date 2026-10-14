@@ -1,31 +1,41 @@
-// Reto 7 P2/P4 — CI de vacaciones-service (Ruby 3.3 + Minitest, stdlib).
+// Reto 7 — CI de vacaciones-service (Ruby 3.3 + Minitest, stdlib).
 // Etapas: Checkout -> Build -> Test -> SonarQube -> Package -> E2E Tests.
-// Misma convención que empleados: fallos -> UNSTABLE; resto -> FAILURE.
+// Top-level 'agent none' con agente propio por etapa (los agentes docker no
+// se anidan: ver empleados/Jenkinsfile). Misma convención: fallos -> UNSTABLE.
 pipeline {
-    agent {
-        docker {
-            image 'ruby:3.3-slim'
-            args '-v jenkins-ruby:/usr/local/bundle'
-        }
-    }
+    agent none
 
     stages {
         stage('Checkout') {
+            agent any
             steps {
                 echo 'Código fuente obtenido del SCM configurado en el job'
             }
         }
 
         stage('Build') {
+            agent {
+                docker {
+                    image 'ruby:3.3-slim'
+                    args '-v jenkins-ruby:/usr/local/bundle'
+                }
+            }
             steps {
                 dir('vacaciones') {
                     // Sin dependencias externas: basta verificar el intérprete.
+                    // run_all.rb usa solo stdlib (sin bundle install).
                     sh 'ruby -v'
                 }
             }
         }
 
         stage('Test') {
+            agent {
+                docker {
+                    image 'ruby:3.3-slim'
+                    args '-v jenkins-ruby:/usr/local/bundle'
+                }
+            }
             steps {
                 dir('vacaciones') {
                     // El '|| true' deja que el pipeline llegue al bloque post y
@@ -45,6 +55,9 @@ pipeline {
         }
 
         stage('SonarQube') {
+            // Scanner CLI 5.0.1 (pin: compatible con SonarQube 9.9).
+            // Host network para llegar a localhost:9000; login Basic (SQ 9.9
+            // rechaza Bearer). La cobertura la generó Test (Cobertura XML).
             agent {
                 docker {
                     image 'sonarsource/sonar-scanner-cli:5.0.1'
@@ -77,6 +90,8 @@ pipeline {
         }
 
         stage('E2E Tests') {
+            // Igual que empleados (proyecto reto7-e2e aislado). No paralelizar
+            // E2E entre pipelines: puertos fijos compartidos.
             agent {
                 docker {
                     image 'python:3.11-slim'

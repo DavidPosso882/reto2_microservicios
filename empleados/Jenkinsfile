@@ -1,33 +1,32 @@
-// Reto 7 P2 — CI de empleados-service (Java 21 + Maven).
-// Etapas: Checkout (automático desde SCM) -> Build -> Test con publicación
-// de resultados (junit) y cobertura (recordCoverage JaCoCo) en post/always,
-// para que el reporte se publique aun cuando las pruebas fallen.
-// Convención: pruebas fallidas -> UNSTABLE (amarillo, lo marca junit);
-// lo que no compila -> FAILURE (rojo). El empaquetado (P4) solo corre en verde.
+// Reto 7 — CI de empleados-service (Java 21 + Maven).
+// Etapas: Checkout -> Build -> Test -> SonarQube -> Package -> E2E Tests.
+// Top-level 'agent none' con agente propio por etapa: los agentes docker
+// NO se pueden anidar (una etapa con agente docker dentro de un agente docker
+// ejecuta 'docker pull' dentro del contenedor -> 127 + JENKINS-30600).
+// Convención: pruebas fallidas -> UNSTABLE (lo marca junit); no compila,
+// QG rojo o E2E rojo -> FAILURE. Package/E2E solo corren en verde.
 pipeline {
-    agent {
-        docker {
-            // Misma toolchain que el Dockerfile del servicio (Java 21 + Maven 3.9).
-            image 'maven:3.9-eclipse-temurin-21'
-            // Socket para Testcontainers (BD real en integración) + caché de
-            // dependencias para no descargar todo en cada build.
-            // --network host: el firewall del host filtra el tráfico del bridge
-            // hacia los puertos efímeros que Testcontainers publica (hasta un
-            // puerto cerrado da timeout desde el puente); con host network el
-            // agente comparte el stack del host y llega a 127.0.0.1:port.
-            // --group-add 983 se mantiene: sin él, el uid 1000 no lee el socket.
-            args '-v /var/run/docker.sock:/var/run/docker.sock -v jenkins-m2:/root/.m2 --group-add 983 --network host'
-        }
-    }
+    agent none
 
     stages {
         stage('Checkout') {
+            agent any
             steps {
                 echo 'Código fuente obtenido del SCM configurado en el job'
             }
         }
 
         stage('Build') {
+            agent {
+                docker {
+                    // Misma toolchain que el Dockerfile del servicio.
+                    image 'maven:3.9-eclipse-temurin-21'
+                    // Socket para Testcontainers + caché m2. Host network: el
+                    // firewall filtra puente->puertos efímeros; group-add 983
+                    // para leer el socket (root:docker 660).
+                    args '-v /var/run/docker.sock:/var/run/docker.sock -v jenkins-m2:/root/.m2 --group-add 983 --network host'
+                }
+            }
             steps {
                 dir('empleados') {
                     sh 'mvn clean compile -DskipTests'
@@ -36,17 +35,18 @@ pipeline {
         }
 
         stage('Test') {
+            agent {
+                docker {
+                    image 'maven:3.9-eclipse-temurin-21'
+                    args '-v /var/run/docker.sock:/var/run/docker.sock -v jenkins-m2:/root/.m2 --group-add 983 --network host'
+                }
+            }
             steps {
                 dir('empleados') {
                     // -Dmaven.test.failure.ignore=true: deja que surefire+failsafe
                     // terminen y generen los XML; es el paso junit quien marca
                     // el build como UNSTABLE si hay fallos.
-                    // TESTCONTAINERS_RYUK_DISABLED: en CI el reaper Ryuk no es
-                    // alcanzable desde el agente; la limpieza la hace el shutdown
-                    // hook de la JVM al terminar surefire (práctica estándar CI).
-                    // TESTCONTAINERS_HOST_OVERRIDE: con --network host el agente
-                    // ve al host como 127.0.0.1 y así llega a los puertos que
-                    // Testcontainers publica (el firewall filtra el puente).
+                    // RYUK_DISABLED + HOST_OVERRIDE: ver comentario del agente.
                     sh 'TESTCONTAINERS_RYUK_DISABLED=true TESTCONTAINERS_HOST_OVERRIDE=127.0.0.1 mvn verify -Dmaven.test.failure.ignore=true'
                 }
             }
@@ -62,18 +62,21 @@ pipeline {
         }
 
         stage('SonarQube') {
+            agent {
+                docker {
+                    image 'maven:3.9-eclipse-temurin-21'
+                    args '-v /var/run/docker.sock:/var/run/docker.sock -v jenkins-m2:/root/.m2 --group-add 983 --network host'
+                }
+            }
             steps {
                 dir('empleados') {
-                    // El reporte JaCoCo lo generó la etapa Test en este workspace.
-                    // localhost: el agente usa host network (etapas Build/Test).
-                    // sonar.qualitygate.wait: el propio scanner espera el Quality
-                    // Gate y falla el build si no pasa. Decisión frente a
-                    // waitForQualityGate+webhook: cero estado en Jenkins (sin
-                    // servidor pre-configurado ni webhook), todo versionado aquí.
-                    // QG rojo -> FAILURE: no se empaqueta sin calidad suficiente.
-                    // NOTA auth: SQ 9.9 no acepta 'Authorization: Bearer' para user
-                    // tokens (solo Basic); el scanner 5.x manda Bearer con
-                    // sonar.token. Con sonar.login manda Basic y autentica bien.
+                    // JaCoCo lo generó Test en este workspace (el checkout por
+                    // etapa conserva untracked: target/, reports/).
+                    // sonar.qualitygate.wait: el scanner espera el QG y falla si
+                    // no pasa (cero estado en Jenkins). localhost: host network.
+                    // sonar.login (Basic): SQ 9.9 rechaza Bearer de sonar.token.
+                    // SQ_TOKEN (no SONAR_TOKEN): ese nombre colisiona con el env
+                    // del controller y el binding llegaba vacío.
                     withCredentials([string(credentialsId: 'sonar-token', variable: 'SQ_TOKEN')]) {
                         sh 'mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.host.url=http://localhost:9000 -Dsonar.login=${SQ_TOKEN} -Dsonar.projectKey=empleados-service -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300'
                     }
@@ -82,6 +85,9 @@ pipeline {
         }
 
         stage('Package') {
+            // Agente python: binario standalone de compose (fetch-compose.py,
+            // cacheado en el workspace) + build/push al registry local con el
+            // tag del build y :latest (docker-compose.registry.yml).
             agent {
                 docker {
                     image 'python:3.11-slim'
@@ -98,6 +104,10 @@ pipeline {
         }
 
         stage('E2E Tests') {
+            // Stack de app en proyecto compose aislado (reto7-e2e: no toca
+            // Jenkins/Sonar/registry del proyecto base). '|| true' tras run_bdd:
+            // es junit quien marca UNSTABLE. Los E2E no se paralelizan entre
+            // pipelines: comparten puertos fijos del stack (8080) y proyecto.
             agent {
                 docker {
                     image 'python:3.11-slim'
