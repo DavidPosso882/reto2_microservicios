@@ -30,9 +30,13 @@ module VacacionesCoverage
     }
     File.write(File.join(out_dir, 'coverage.json'), JSON.pretty_generate(payload))
     File.write(File.join(out_dir, 'index.html'), html(summary, files))
-    # Cobertura XML para Jenkins recordCoverage y SonarQube (Reto 7 P2/P3).
+    # Cobertura XML para Jenkins recordCoverage (Reto 7 P2).
     # Filenames relativos a app/ (sources = vacaciones/app).
     File.write(File.join(out_dir, 'coverage.xml'), cobertura(raw, summary))
+    # Formato GENERICO de SonarQube (Reto 7 P4): Community no trae analizador
+    # Ruby, así que la cobertura entra por sonar.coverageReportPaths con paths
+    # relativos a la raíz del proyecto (app/...).
+    File.write(File.join(out_dir, 'coverage-generic.xml'), generic_coverage(raw))
 
     warn format(
       '[coverage] lineas %<line>s%% (%<covered>s/%<total>s), ramas %<branch>s%% -> %<path>s',
@@ -143,6 +147,32 @@ module VacacionesCoverage
 
   def xml_escape(str)
     str.gsub('&', '&amp;').gsub('<', '&lt;').gsub('"', '&quot;')
+  end
+
+  # Cobertura genérica de SonarQube (<coverage version="1">): una entrada por
+  # línea relevante con covered=true si hits>0. Paths relativos a vacaciones/.
+  def generic_coverage(raw)
+    files = raw
+      .select { |path, _| path.start_with?("#{APP_DIR}/") && path.end_with?('.rb') }
+      .sort
+      .map do |path, data|
+        rel = "app/#{path.delete_prefix("#{APP_DIR}/")}"
+        lines = data[:lines] || []
+        entries = []
+        lines.each_with_index do |count, idx|
+          next if count.nil?
+
+          entries << %(<lineToCover lineNumber="#{idx + 1}" covered="#{count.positive?}"/>)
+        end
+        %(<file path="#{xml_escape(rel)}">
+#{entries.join("\n")}
+</file>)
+      end.join("\n")
+    <<~XML
+      <coverage version="1">
+      #{files}
+      </coverage>
+    XML
   end
 
   def html(summary, files)

@@ -56,6 +56,11 @@ credentials:
               id: "sonar-token"
               secret: "${SONAR_TOKEN}"
               description: "Token SonarQube para el análisis CI"
+          - string:
+              scope: GLOBAL
+              id: "jwt-secret"
+              secret: "${JWT_SECRET}"
+              description: "JWT para los stacks E2E desechables (nunca en git)"
 
 # (El servidor SonarQube para waitForQualityGate se configura por script
 # init.groovy.d — el plugin sonar de esta versión no expone raíz CasC.)

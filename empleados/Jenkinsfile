@@ -96,10 +96,15 @@ pipeline {
             }
             steps {
                 sh 'python3 scripts/fetch-compose.py'
-                sh 'TAG=${BUILD_NUMBER} .ci-tools/docker-compose -p reto7-e2e -f docker-compose.yml -f docker-compose.registry.yml build empleados-service'
-                sh 'TAG=${BUILD_NUMBER} .ci-tools/docker-compose -p reto7-e2e -f docker-compose.yml -f docker-compose.registry.yml push empleados-service'
-                sh 'TAG=latest .ci-tools/docker-compose -p reto7-e2e -f docker-compose.yml -f docker-compose.registry.yml build empleados-service'
-                sh 'TAG=latest .ci-tools/docker-compose -p reto7-e2e -f docker-compose.yml -f docker-compose.registry.yml push empleados-service'
+                // JWT por credencial jwt-secret (el clone no trae .env). Se
+                // re-exporta como JWT_SECRET con otro nombre de variable porque
+                // JWT_SECRET colisiona con el env del controller (llegaba vacío).
+                withCredentials([string(credentialsId: 'jwt-secret', variable: 'JWT_CI')]) {
+                    sh 'export JWT_SECRET=$JWT_CI; TAG=${BUILD_NUMBER} scripts/ci-compose.sh -r build empleados-service'
+                    sh 'export JWT_SECRET=$JWT_CI; TAG=${BUILD_NUMBER} scripts/ci-compose.sh -r push empleados-service'
+                    sh 'export JWT_SECRET=$JWT_CI; TAG=latest scripts/ci-compose.sh -r build empleados-service'
+                    sh 'export JWT_SECRET=$JWT_CI; TAG=latest scripts/ci-compose.sh -r push empleados-service'
+                }
             }
         }
 
@@ -116,7 +121,9 @@ pipeline {
             }
             steps {
                 sh 'python3 scripts/fetch-compose.py'
-                sh '.ci-tools/docker-compose -p reto7-e2e -f docker-compose.yml up -d --build api-gateway'
+                withCredentials([string(credentialsId: 'jwt-secret', variable: 'JWT_CI')]) {
+                    sh 'export JWT_SECRET=$JWT_CI; scripts/ci-compose.sh up -d --build api-gateway'
+                }
                 sh 'BASE_URL=http://localhost:8080 python3 scripts/wait-for-e2e-ready.py'
                 sh 'cd e2e-tests && ([ -x .venv/bin/behave ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt)) && BASE_URL=http://localhost:8080 ./run_bdd.sh || true'
             }
@@ -125,8 +132,10 @@ pipeline {
                     junit 'e2e-tests/reports/TESTS-*.xml'
                     cucumber(jsonReportDirectory: 'e2e-tests/reports', fileIncludePattern: '**/cucumber.json', buildStatus: 'UNSTABLE')
                     publishHTML(target: [reportDir: 'e2e-tests/reports', reportFiles: 'cucumber.html', reportName: 'Reporte BDD', keepAll: true, alwaysLinkToLastBuild: true])
-                    sh '.ci-tools/docker-compose -p reto7-e2e logs --no-color > docker-logs.txt || true'
-                    sh '.ci-tools/docker-compose -p reto7-e2e down -v || true'
+                    withCredentials([string(credentialsId: 'jwt-secret', variable: 'JWT_CI')]) {
+                        sh 'export JWT_SECRET=$JWT_CI; scripts/ci-compose.sh logs --no-color > docker-logs.txt || true'
+                        sh 'export JWT_SECRET=$JWT_CI; scripts/ci-compose.sh down -v || true'
+                    }
                     archiveArtifacts artifacts: 'docker-logs.txt', allowEmptyArchive: true
                 }
             }

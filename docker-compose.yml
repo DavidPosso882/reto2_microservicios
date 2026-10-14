@@ -356,6 +356,7 @@ services:
       - JAVA_OPTS=-Djenkins.install.runSetupWizard=false -Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true
       - CASC_JENKINS_CONFIG=/var/jenkins_home/casc_configs
       - SONAR_TOKEN=${SONAR_TOKEN:-}   # Reto 7 P3: JCasC lo usa como credencial (ver casc.yaml)
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}   # Reto 7 P4: JCasC lo usa como credencial jwt-secret
     networks:
       - microservices-network
 
