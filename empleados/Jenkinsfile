@@ -73,7 +73,7 @@ pipeline {
                     // QG rojo -> FAILURE: no se empaqueta sin calidad suficiente.
                     withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                         sh '''
-                            mvn sonar:sonar \
+                            mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
                                 -Dsonar.host.url=http://localhost:9000 \
                                 -Dsonar.token=${SONAR_TOKEN} \
                                 -Dsonar.projectKey=empleados-service \
