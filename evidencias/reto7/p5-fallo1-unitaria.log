@@ -1,0 +1,2 @@
+P5 fallo#1 unitaria rota — emp#18 UNSTABLE
+Test stage: UNSTABLE | junit fail:1 | FAILED com.empresa.gestionempleados.config.RabbitMQConfigTest declaraExchangeTopicDurable

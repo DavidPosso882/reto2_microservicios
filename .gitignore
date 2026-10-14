@@ -56,3 +56,6 @@ evidencias/reto4/compose-logs-*.log
 
 # Coleccion Bruno: vista complementaria local, no se versiona
 pruebas_bruno/
+
+# Cache del binario standalone de compose (lo baja scripts/fetch-compose.py)
+.ci-tools/
