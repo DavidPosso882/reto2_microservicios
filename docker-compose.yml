@@ -48,14 +48,15 @@ services:
       - microservices-network
 
   database-empleados:
-    image: postgres:16-alpine
+    build:
+      context: ./empleados
+      dockerfile: Dockerfile.db
     environment:
       POSTGRES_DB: ${DB_EMPLEADOS_NAME:-gestion_empleados}
       POSTGRES_USER: ${DB_EMPLEADOS_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_EMPLEADOS_PASSWORD:-postgres}
     volumes:
       - vol-empleados:/var/lib/postgresql/data
-      - ./empleados/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_EMPLEADOS_USER:-postgres} -d ${DB_EMPLEADOS_NAME:-gestion_empleados}"]
       interval: 5s
@@ -66,14 +67,15 @@ services:
       - microservices-network
 
   database-departamentos:
-    image: postgres:16-alpine
+    build:
+      context: ./departamentos
+      dockerfile: Dockerfile.db
     environment:
       POSTGRES_DB: ${DB_DEPARTAMENTOS_NAME:-departamentos}
       POSTGRES_USER: ${DB_DEPARTAMENTOS_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_DEPARTAMENTOS_PASSWORD:-postgres}
     volumes:
       - vol-departamentos:/var/lib/postgresql/data
-      - ./departamentos/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_DEPARTAMENTOS_USER:-postgres} -d ${DB_DEPARTAMENTOS_NAME:-departamentos}"]
       interval: 5s
@@ -184,14 +186,15 @@ services:
       - microservices-network
 
   database-perfiles:
-    image: postgres:16-alpine
+    build:
+      context: ./perfiles
+      dockerfile: Dockerfile.db
     environment:
       POSTGRES_DB: ${DB_PERFILES_NAME:-perfiles}
       POSTGRES_USER: ${DB_PERFILES_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PERFILES_PASSWORD:-postgres}
     volumes:
       - vol-perfiles:/var/lib/postgresql/data
-      - ./perfiles/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_PERFILES_USER:-postgres} -d ${DB_PERFILES_NAME:-perfiles}"]
       interval: 5s
@@ -231,14 +234,15 @@ services:
       - microservices-network
 
   database-vacaciones:
-    image: postgres:16-alpine
+    build:
+      context: ./vacaciones
+      dockerfile: Dockerfile.db
     environment:
       POSTGRES_DB: ${DB_VACACIONES_NAME:-vacaciones}
       POSTGRES_USER: ${DB_VACACIONES_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_VACACIONES_PASSWORD:-postgres}
     volumes:
       - vol-vacaciones:/var/lib/postgresql/data
-      - ./vacaciones/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_VACACIONES_USER:-postgres} -d ${DB_VACACIONES_NAME:-vacaciones}"]
       interval: 5s
