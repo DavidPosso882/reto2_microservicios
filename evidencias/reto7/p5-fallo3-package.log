@@ -1,0 +1,2 @@
+P5 fallo#3 Dockerfile roto — vac#14 FAILURE
+Package stage: FAILED (E2E skipped) | causa: FROM ruby:NOEXISTE-P5-SIMULADO sin resolver
