@@ -65,28 +65,22 @@ pipeline {
             steps {
                 dir('empleados') {
                     // El reporte JaCoCo lo generó la etapa Test en este workspace.
-                    // localhost: el agente usa host network (etapas Build/Test);
-                    // el servidor 'SonarQube' (http://sonarqube:9000) lo usa el
-                    // controller en la etapa Quality Gate.
+                    // localhost: el agente usa host network (etapas Build/Test).
+                    // sonar.qualitygate.wait: el propio scanner espera el Quality
+                    // Gate y falla el build si no pasa. Decisión frente a
+                    // waitForQualityGate+webhook: cero estado en Jenkins (sin
+                    // servidor pre-configurado ni webhook), todo versionado aquí.
+                    // QG rojo -> FAILURE: no se empaqueta sin calidad suficiente.
                     withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                         sh '''
                             mvn sonar:sonar \
                                 -Dsonar.host.url=http://localhost:9000 \
                                 -Dsonar.token=${SONAR_TOKEN} \
-                                -Dsonar.projectKey=empleados-service
+                                -Dsonar.projectKey=empleados-service \
+                                -Dsonar.qualitygate.wait=true \
+                                -Dsonar.qualitygate.timeout=300
                         '''
                     }
-                }
-            }
-        }
-
-        stage('Quality Gate') {
-            // En el controller (no en el agente docker): aquí sí resuelve
-            // http://sonarqube:9000 del servidor 'SonarQube' configurado por JCasC.
-            agent any
-            steps {
-                timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
                 }
             }
         }
