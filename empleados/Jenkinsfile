@@ -71,14 +71,14 @@ pipeline {
                     // waitForQualityGate+webhook: cero estado en Jenkins (sin
                     // servidor pre-configurado ni webhook), todo versionado aquí.
                     // QG rojo -> FAILURE: no se empaqueta sin calidad suficiente.
-                    // NOTA: la variable se llama SQ_TOKEN y no SONAR_TOKEN porque
-                    // ese nombre colisiona con la variable de entorno del controller
-                    // (inyectada por Compose para JCasC) y el binding llegaba vacío.
+                    // NOTA auth: SQ 9.9 no acepta 'Authorization: Bearer' para user
+                    // tokens (solo Basic); el scanner 5.x manda Bearer con
+                    // sonar.token. Con sonar.login manda Basic y autentica bien.
                     withCredentials([string(credentialsId: 'sonar-token', variable: 'SQ_TOKEN')]) {
                         sh '''
                             mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
                                 -Dsonar.host.url=http://localhost:9000 \
-                                -Dsonar.token=${SQ_TOKEN} \
+                                -Dsonar.login=${SQ_TOKEN} \
                                 -Dsonar.projectKey=empleados-service \
                                 -Dsonar.qualitygate.wait=true \
                                 -Dsonar.qualitygate.timeout=300
