@@ -40,7 +40,10 @@ pipeline {
                     // -Dmaven.test.failure.ignore=true: deja que surefire+failsafe
                     // terminen y generen los XML; es el paso junit quien marca
                     // el build como UNSTABLE si hay fallos.
-                    sh 'mvn verify -Dmaven.test.failure.ignore=true'
+                    // TESTCONTAINERS_RYUK_DISABLED: en CI el reaper Ryuk no es
+                    // alcanzable desde el agente; la limpieza la hace el shutdown
+                    // hook de la JVM al terminar surefire (práctica estándar CI).
+                    sh 'TESTCONTAINERS_RYUK_DISABLED=true mvn verify -Dmaven.test.failure.ignore=true'
                 }
             }
             post {
