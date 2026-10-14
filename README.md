@@ -627,3 +627,163 @@ Todos corren **sin broker ni Postgres reales** (fakes en memoria):
 ├── api-gateway/                # + rutas /perfiles /notificaciones /vacaciones
 └── evidencias/reto4/           # flujo-e2e.log, dedup.log, informe de re-verificación
 ```
+
+# Reto 7 — Integración Continua con Jenkins
+
+Evolución del Reto 6: cada cambio en el código se compila, prueba y
+empaqueta automáticamente. Cada microservicio con `Jenkinsfile` tiene un
+pipeline declarativo con publicación de todos los reportes del Reto 6 en la
+interfaz de Jenkins: un fallo ya no es un "FAILED" en un log, sino el nombre
+de la prueba o del escenario BDD que falló.
+
+## 1. Qué es CI y por qué entra al proyecto
+
+Integración Continua: integrar código frecuentemente y verificar cada
+integración con compilación + pruebas automáticas. Sin CI, un cambio que
+rompe otro servicio se descubre al hacer `docker compose up` (tarde); con
+CI se detecta en minutos tras el commit. Los reportes del Reto 6 dejaban de
+ser archivos locales olvidados: Jenkins los publica con tendencia entre
+builds (¿la cobertura sube o baja?) y el reporte BDD navegable en español.
+
+## 2. Acceso a Jenkins y SonarQube
+
+| Servicio | URL | Credenciales |
+|---|---|---|
+| Jenkins | `http://localhost:9090` | `admin` / `admin` (creado como código) |
+| SonarQube | `http://localhost:9000` | `admin` / `admin123` |
+| Registry local | `http://localhost:5000/v2/_catalog` | sin autenticación |
+
+## 3. Configuración
+
+### a. Levantar el sistema con Jenkins incluido
+
+```bash
+cp .env.example .env   # completar JWT_SECRET y SONAR_TOKEN (nunca van a git)
+docker compose up --build -d
+```
+
+### b. Contraseña inicial de Jenkins
+
+No hay asistente ni contraseña inicial: `jenkins/init.groovy.d/` crea el
+usuario `admin`/`admin` y `JAVA_OPTS=-Djenkins.install.runSetupWizard=false`
+desactiva el setup wizard. Los plugins ya vienen pre-instalados en
+`jenkins/Dockerfile` vía `jenkins-plugin-cli`.
+
+### c. Crear/importar los pipelines
+
+Nada manual: `jenkins/casc.yaml` (JCasC + job-dsl, Opción A) crea los jobs
+`empleados-service` y `vacaciones-service` al arrancar; cada uno lee su
+`Jenkinsfile` versionado junto al código (`empleados/Jenkinsfile`,
+`vacaciones/Jenkinsfile`) del repo montado en `/workspace`, rama
+`reto-7-integracion-continua-jenkins`. Tras cada boot: `POST /reload` para
+que Jenkins cargue en memoria los jobs definidos en disco.
+
+### d. Ejecutar un pipeline manualmente
+
+Jenkins → clic en el job → *Build Now*. O por API con crumb:
+
+```bash
+J=http://localhost:9090; jar=/tmp/jc.txt
+CJ=$(curl -s -c $jar -u admin:admin $J/crumbIssuer/api/json)
+CR=$(echo "$CJ" | python3 -c "import sys,json;print(json.load(sys.stdin)['crumb'])")
+FD=$(echo "$CJ" | python3 -c "import sys,json;print(json.load(sys.stdin)['crumbRequestField'])")
+curl -b $jar -u admin:admin -H "$FD: $CR" -X POST $J/job/empleados-service/build
+```
+
+> Los E2E comparten puertos fijos: **no paralelizar** los pipelines; correr
+> uno a la vez (serializado).
+
+## 4. Etapas del pipeline y qué verifica cada una
+
+`Checkout → Build → Test → SonarQube → Quality Gate → Package → E2E Tests`
+
+| Etapa | Qué verifica |
+|---|---|
+| Checkout | Clona la rama del reto desde `file:///workspace` |
+| Build | Compila (`mvn`, `bundle install`) sin correr tests |
+| Test | Unitarias + integración del Reto 6; publica resultados y cobertura |
+| SonarQube | Análisis estático + importa la cobertura; espera el Quality Gate |
+| Quality Gate | Falla si cobertura < 70 % (gate `reto7-70`) |
+| Package | Construye la imagen y la publica en el registry local (`:BUILD_NUMBER` + `:latest`) |
+| E2E Tests | Levanta el stack aislado (`-p reto7-e2e`), corre la suite BDD, archiva `docker-logs.txt` y limpia con `down -v` |
+
+## 5. Tabla de reportes publicados
+
+| Etapa | Reporte | Paso de publicación | Dónde se consulta |
+|---|---|---|---|
+| Test | Resultados unitarios/integración (JUnit XML) | `junit` en `post { always }` | Pestaña **Test Result** del build + tendencia |
+| Test | Cobertura (JaCoCo / Cobertura XML) | `recordCoverage` en `post { always }` | Pestaña **Coverage** + variación vs build anterior |
+| E2E | Escenarios BDD (JUnit XML) | `junit` en `post { always }` | **Test Result** (cuenta escenarios, marca UNSTABLE) |
+| E2E | Reporte BDD navegable en español (`cucumber.html`) | `publishHTML` → **Reporte BDD** | Enlace **Reporte BDD** del build |
+| E2E | Logs del sistema | `archiveArtifacts: docker-logs.txt` | Artefactos descargables del build |
+| SonarQube | Bugs, vulnerabilidades, smells, duplicación, cobertura | Dashboard SonarQube | `http://localhost:9000` proyecto `empleados-service` / `vacaciones-service` |
+
+> Sin paso `cucumber()`: el JSON de behave no lo digiere el plugin
+> `cucumber-reports` ("Missing report result" aun con 18/18 en verde); la
+guía ofrece `publishHTML` como alternativa genérica y `junit` sigue siendo
+> el gate. Decisión documentada en los `Jenkinsfile`.
+
+## 6. Cómo interpretar los resultados
+
+| Color/estado | Significado |
+|---|---|
+| Verde (SUCCESS) | Todas las etapas pasaron; imagen publicada; E2E 18/18 |
+| Amarillo (UNSTABLE) | Compiló pero hay **pruebas fallando**: el nombre del test o escenario está en **Test Result** (no hace falta abrir el log) |
+| Rojo (FAILURE) | No compiló, el Quality Gate no pasó o falló el empaquetado/E2E de infra |
+
+`FAILURE` = el pipeline no pudo completarse; `UNSTABLE` = se completó pero
+con pruebas en rojo. Un servicio con pruebas fallidas no debería llegar a
+`Package`: `junit` lo marca UNSTABLE y el equipo lo ve antes de desplegar.
+
+## 7. Decisiones técnicas
+
+- **Docker Socket Mount** (simplicidad, entorno académico) con grupo docker
+  del host; `runSetupWizard=false` + admin como código.
+- **Jobs como código (JCasC, Opción A)** frente a `init.groovy.d`: es
+  declarativo y se revisa como YAML.
+- **Agente por etapa** (`agent none` global): anidar agentes docker falla
+  (127 / JENKINS-30600). Testcontainers con `--network host` +
+  `TESTCONTAINERS_HOST_OVERRIDE=127.0.0.1` + Ryuk desactivado (el firewall
+del host filtra puente→puertos efímeros). Caché de dependencias con
+  volúmenes (`jenkins-m2`); `HOME=/tmp` en agentes python (uid 1000 sin HOME).
+- **Secretos**: `.env` gitignored; Jenkins Credentials (`sonar-token`,
+  `jwt-secret`) vía JCasC. La variable del binding no se llama igual que el
+env del controller (llegaba vacía): `SQ_TOKEN` / `JWT_CI` re-exportado.
+- **SonarQube 9.9**: el scanner espera el Quality Gate
+  (`sonar.qualitygate.wait=true`); auth con `sonar.login` (Basic: el Bearer
+  de `sonar.token` lo rechaza). Gate `reto7-70`: cobertura ≥ 70 %.
+- **DBs con `init.sql` horneado** (`Dockerfile.db`): el bind-mount no funciona
+  con Docker-out-of-Docker desde Jenkins (el daemon del host no ve el
+  workspace del contenedor: "Is a directory"). El contexto de build sí viaja
+  al daemon: portable entre máquinas y vale para retos siguientes.
+- **Registry local** `localhost:5000/<servicio>:BUILD_NUMBER` + `:latest`.
+- **E2E serializado** entre pipelines (puertos fijos) con proyecto aislado
+  `reto7-e2e`, `wait-for-e2e-ready.py`, logs archivados y `down -v`.
+- **Sin reporte E2E = build roto**: si el stack nunca levanta, `junit` sin
+  archivos falla a propósito (ese caso también debe romper el build).
+
+## 8. Reproducibilidad (P5)
+
+- **3 corridas verdes consecutivas**: `vacaciones-service #17, #18, #19` y
+  `empleados-service #20, #21, #22`, todas SUCCESS en las 7 etapas.
+- **4 fallos simulados**, cada uno identificado en su reporte (no solo en el
+  log); evidencias en `evidencias/reto7/p5-fallo*.log`:
+
+| # | Rotura | Build | Etapa | Reporte |
+|---|---|---|---|---|
+| 1 | Assertion en `RabbitMQConfigTest` | empleados `#18` UNSTABLE | Test UNSTABLE | `FAILED ... RabbitMQConfigTest declaraExchangeTopicDurable` |
+| 2 | Clase de 2285 líneas sin tests (cobertura < 70 %) | empleados `#19` FAILURE | SonarQube FAILED | `QUALITY GATE STATUS: FAILED` |
+| 3 | `FROM ruby:NOEXISTE-P5-SIMULADO` | vacaciones `#14` FAILURE | Package FAILED | `not found` al resolver la imagen |
+| 4 | BDD espera 200 donde el API da 201 | vacaciones `#16` UNSTABLE | E2E UNSTABLE | `FAILED vacaciones.Vacaciones y ciclo de vida de la cuenta \| La programación exitosa...` |
+
+## 9. Capturas
+
+En `evidencias/reto7/`:
+
+| Captura | Archivo | Qué muestra |
+|---|---|---|
+| Pipeline exitoso (vista de etapas) | `p5-pipeline-verde.png` | Las 7 etapas en verde |
+| Test Result unitarias | `p5-test-result.png` | Pruebas y conteos |
+| Coverage | `p5-coverage.png` | Porcentaje y tendencia |
+| Reporte BDD navegable | `p5-reporte-bdd.png` | Características y escenarios en español |
+| Build fallido | `p5-build-fallido.png` | Prueba/escenario que falló identificado |
