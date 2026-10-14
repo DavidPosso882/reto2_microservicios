@@ -17,7 +17,7 @@ Característica: Vacaciones y ciclo de vida de la cuenta
 
   Escenario: La programación exitosa de vacaciones se notifica eventualmente
     Cuando programo un período de vacaciones futuro
-    Entonces respuesta código 201
+    Entonces respuesta código 200
     Y la respuesta confirma el período programado
     Y eventualmente llega la notificación de vacaciones programadas
 
