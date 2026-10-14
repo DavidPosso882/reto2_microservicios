@@ -113,7 +113,11 @@ pipeline {
             post {
                 always {
                     junit 'e2e-tests/reports/TESTS-*.xml'
-                    cucumber(jsonReportDirectory: 'e2e-tests/reports', fileIncludePattern: '**/cucumber.json', buildStatus: 'UNSTABLE')
+                    // Sin paso cucumber(): el JSON de behave no lo digiere el
+                    // plugin cucumber-reports ("Missing report result" aun con
+                    // 18/18 passed, marca UNSTABLE en verde). La guia ofrece
+                    // publishHTML como alternativa generica y junit sigue
+                    // siendo el gate (escenarios fallidos -> UNSTABLE).
                     publishHTML(target: [reportDir: 'e2e-tests/reports', reportFiles: 'cucumber.html', reportName: 'Reporte BDD', keepAll: true, alwaysLinkToLastBuild: true])
                     withCredentials([string(credentialsId: 'jwt-secret', variable: 'JWT_CI')]) {
                         sh 'export JWT_SECRET=$JWT_CI; scripts/ci-compose.sh logs --no-color > docker-logs.txt || true'
