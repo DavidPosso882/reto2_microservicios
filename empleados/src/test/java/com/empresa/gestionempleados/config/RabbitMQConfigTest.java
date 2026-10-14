@@ -26,7 +26,7 @@ class RabbitMQConfigTest {
     void declaraExchangeTopicDurable() {
         TopicExchange exchange = config.eventosExchange();
 
-        assertEquals("ecosistema.ROTO-SIMULADO-P5", exchange.getName());
+        assertEquals("ecosistema.eventos", exchange.getName());
         assertEquals("topic", exchange.getType());
         assertTrue(exchange.isDurable(), "El exchange debe ser durable");
         assertFalse(exchange.isAutoDelete());
