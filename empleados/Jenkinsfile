@@ -8,6 +8,11 @@
 pipeline {
     agent none
 
+    triggers {
+        // Revisa cambios en el repo cada minuto y dispara el build automáticamente.
+        pollSCM('* * * * *')
+    }
+
     stages {
         stage('Checkout') {
             agent any
