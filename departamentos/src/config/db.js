@@ -4,7 +4,7 @@ const { Pool } = pg;
 
 /**
  * Builds a pg connection pool from environment variables.
- *
+ * #prueba pipeline
  * Expected variables: DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD.
  */
 export function createPool() {

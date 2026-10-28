@@ -1,0 +1,9 @@
+# Reto 7 P4 — Override para el stack E2E aislado (proyecto reto7-e2e).
+# Quita los port bindings que colisionan con el stack principal del host.
+# Uso en ci-compose.sh: se pasa junto al docker-compose.yml principal.
+services:
+  message-broker:
+    ports: []      # sin binding al host: evita conflicto con el stack principal
+  api-gateway:
+    ports: []      # el gateway E2E no necesita puerto externo (wait-for-e2e-ready
+                   # y behave llegan por network host desde el contenedor Jenkins)
