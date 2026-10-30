@@ -1,0 +1,39 @@
+# Reto 8 (S5) — Contact points de Grafana Alerting aprovisionados como código.
+#
+# Grafana lee este fichero al arrancar desde /etc/grafana/provisioning/alerting
+# (el directorio `provisioning` completo está montado read-only en
+# docker-compose.yml, así que este subdirectorio entra sin tocar el compose).
+#
+# El canal elegido es TELEGRAM: un bot de @BotFather y el chat_id del grupo o
+# del chat directo. Las credenciales NUNCA se escriben aquí: se inyectan como
+# variables de entorno del contenedor Grafana ($TELEGRAM_BOT_TOKEN,
+# $TELEGRAM_CHAT_ID) y Grafana las expande al leer el fichero de aprovisionamiento.
+# Ver README raíz §Reto 8 → "Canal de alertas (Telegram)" para los pasos.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: reto8-telegram
+    receivers:
+      - uid: reto8-telegram-receiver
+        type: telegram
+        # Si el servicio vuelve, también se notifica la resolución.
+        disableResolveMessage: false
+        settings:
+          bottoken: $TELEGRAM_BOT_TOKEN
+          chatid: $TELEGRAM_CHAT_ID
+
+  # ── Alternativa documentada: Discord ──────────────────────────────────────
+  # Se deja COMENTADO a propósito: un receiver cuyo webhook no existe se queda
+  # en error de envío y ensucia los logs de Grafana. Para usarlo, exporta
+  # $DISCORD_WEBHOOK_URL en el contenedor, descomenta este bloque y cambia el
+  # `receiver` de notification-policies.yml a `reto8-discord`.
+  #
+  # - orgId: 1
+  #   name: reto8-discord
+  #   receivers:
+  #     - uid: reto8-discord-receiver
+  #       type: discord
+  #       disableResolveMessage: false
+  #       settings:
+  #         url: $DISCORD_WEBHOOK_URL

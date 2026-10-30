@@ -4,6 +4,7 @@
 *.md
 !README.md
 !**/README.md
+!evidencias/reto8/README-evidencias.md
 
 # Variables de entorno y secretos
 .env

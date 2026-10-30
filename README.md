@@ -787,3 +787,486 @@ En `evidencias/reto7/`:
 | Coverage | `p5-coverage.png` | Porcentaje y tendencia |
 | Reporte BDD navegable | `p5-reporte-bdd.png` | Características y escenarios en español |
 | Build fallido | `p5-build-fallido.png` | Prueba/escenario que falló identificado |
+
+---
+
+# Reto 8 — Observabilidad y Monitoreo del Ecosistema
+
+Stack de observabilidad integrado al ecosistema de los Retos 2–7:
+**Prometheus** (métricas), **Grafana** (dashboards + alertas), **Loki + Promtail**
+(logs) y **Zipkin** (trazas), todo desplegado como servicios adicionales del
+`docker-compose.yml` raíz y configurado **como código** (sin pasos manuales en
+la UI).
+
+| Requisito | Dónde se cumple |
+|---|---|
+| S1 — `/health` + `/metrics` por servicio | Instrumentación de los 7 servicios (T2), scrape en `observability/prometheus/prometheus.yml` |
+| S2 — OpenTelemetry en todos los lenguajes | SDK/agente OTel por servicio, exportador Zipkin, propagación W3C (§3, §2.4) |
+| S3 — stack en `docker-compose.yml` | servicios `prometheus`, `grafana`, `loki`, `promtail`, `zipkin` |
+| S4 — dashboard multi-servicio | `observability/grafana/dashboards/reto8-ecosistema.json` (§5) |
+| S5 — reglas de alerta + canal externo | `observability/grafana/provisioning/alerting/` + contact point Telegram (§6) |
+| S6 — arquitectura documentada | este apartado (§1–§4) |
+
+---
+
+## 1. Arquitectura de observabilidad
+
+```mermaid
+flowchart LR
+  U["Cliente / curl"] --> GW["api-gateway :8080"]
+
+  subgraph MS["Microservicios · red microservices-network (sin puertos publicados)"]
+    AU["auth-service :8086"]
+    EM["empleados-service :8081"]
+    DE["departamentos-service :8082"]
+    PE["perfiles-service :8083"]
+    NO["notificaciones-service :8084"]
+    VA["vacaciones-service :8085"]
+  end
+
+  GW -->|"HTTP"| EM & DE & PE & NO & VA & AU
+  EM -->|"HTTP sync"| DE
+  EM -.->|"evento empleado.creado"| MQ[("RabbitMQ")]
+  MQ -.->|"consume"| PE & NO & AU & VA
+  VA -.->|"scheduler: span raíz"| MQ
+
+  subgraph OBS["Stack de observabilidad"]
+    PR["Prometheus :9090 · host 9091"]
+    GR["Grafana :3000"]
+    LO["Loki :3100"]
+    PT["Promtail (sin puerto)"]
+    ZK["Zipkin :9411"]
+  end
+
+  PR -->|"PULL GET /metrics cada 15s"| GW & AU & EM & DE & PE & NO & VA
+  GW & AU & EM & DE & PE & NO & VA -->|"PUSH spans (Zipkin JSON)"| ZK
+  PT -->|"PUSH logs"| LO
+  GR -->|"PromQL · uid prometheus"| PR
+  GR -->|"LogQL · uid loki"| LO
+  GR -->|"trazas · uid zipkin"| ZK
+```
+
+| Componente | Imagen | URL desde el host | Función |
+|---|---|---|---|
+| Prometheus | `prom/prometheus` | http://localhost:9091 | recolecta `/metrics` de los 7 servicios cada 15s |
+| Grafana | `grafana/grafana` | http://localhost:3000 | dashboards, alertas y exploración (admin/`GRAFANA_ADMIN_PASSWORD`) |
+| Loki | `grafana/loki` | http://localhost:3100 | almacén de logs (API de push y de consulta) |
+| Promtail | `grafana/promtail` | — | lee stdout/stderr de todos los contenedores vía `/var/run/docker.sock` |
+| Zipkin | `openzipkin/zipkin` | http://localhost:9411 | UI y API de ingesta de trazas (`STORAGE_TYPE=mem`) |
+
+**Prometheus publica en 9091, no en 9090**: Jenkins (Reto 7) ya ocupa el 9090
+del host. Dentro de la red Docker Prometheus sigue escuchando en `:9090`, que es
+la URL que consumen Grafana y el propio Prometheus.
+
+Flujo de una petición: el gateway es el **primer** `scrape_job` y el primer span;
+las métricas son **pull** (Prometheus consulta), mientras que trazas y logs son
+**push** (los servicios exportan a Zipkin, Promtail empuja a Loki).
+
+---
+
+## 2. Investigación de conceptos
+
+### 2.1 Los tres pilares
+
+| Pilar | Pregunta que responde | Herramienta aquí | Mecanismo |
+|---|---|---|---|
+| **Métricas** | ¿cuánto, cuántos y qué tan rápido? (agregados numéricos en el tiempo) | Prometheus + Grafana | **Pull**: scrape de `GET /metrics` cada 15s |
+| **Logs** | ¿qué pasó exactamente en este servicio? (eventos discretos con texto) | Loki + Promtail | **Push**: Promtail descubre contenedores por `docker.sock` y empuja a Loki |
+| **Trazas** | ¿por dónde pasó la petición y dónde se fue el tiempo? | Zipkin + OpenTelemetry | **Push**: `BatchSpanProcessor` exporta spans a `/api/v2/spans` |
+
+Los tres se correlacionan por `traceId`: Grafana va de una traza de Zipkin a los
+logs de Loki con el mismo `traceId` (`tracesToLogsV2` en el datasource Zipkin) y
+de una métrica al contenedor que la produce.
+
+### 2.2 Pull vs Push
+
+| | **Pull** (Prometheus) | **Push** (trazas/logs) |
+|---|---|---|
+| Quién inicia | el colector | el productor del dato |
+| Ventaja principal | el fallo de scrape se convierte en señal: `up == 0` (base de la alerta "Servicio Caído") | no hace falta exponer un puerto ni que el backend alcance al servicio |
+| Ventaja secundaria | el servicio no sabe nada de observabilidad; sin agentes que empujen | funciona con contenedores efímeros y con flujos asíncronos (scheduler → broker) |
+| Coste | el endpoint debe ser alcanzable y el proceso duradero (los jobs batch necesitan Pushgateway) | el productor necesita buffer/reintentos y un endpoint de destino |
+| En este proyecto | Prometheus → `api-gateway:8080/metrics`, etc. | servicios → `zipkin:9411`, Promtail → `loki:3100` |
+
+**Consecuencia práctica:** el pull de Prometheus es lo que permite detectar un
+servicio caído sin que el servicio colabore. Si el target desaparece del
+`prometheus.yml` (no sólo se detiene el contenedor), la serie `up` desaparece y
+la regla pasa a `NoData` en lugar de dispararse.
+
+### 2.3 OpenTelemetry y CNCF
+
+OpenTelemetry es un proyecto de la **CNCF** (incubating) y el estándar de
+facto para generar, propagar y exportar telemetría. Se compone de:
+
+- **API**: la interfaz que usa el código de negocio (`tracer.start_as_current_span`).
+- **SDK**: la implementación (samplers, procesadores, exportadores).
+- **Instrumentación automática**: parches para HTTP, gRPC, JDBC, Express, FastAPI, Sinatra, AMQP…
+- **Exportadores**: Zipkin, OTLP, Jaeger, Prometheus…
+- **Propagación de contexto**: el estándar W3C (§2.4).
+
+Su valor es la **neutralidad de proveedor**: instrumentar una sola vez y cambiar
+el backend (Zipkin ↔ Jaeger ↔ Tempo ↔ Grafana Cloud) cambiando sólo el
+exportador, sin tocar la lógica de negocio. En este ecosistema cada lenguaje usa
+el SDK oficial (o el agente Java), y esa es la razón de que siete servicios en
+cinco lenguajes produzcan un único modelo de trazas.
+
+### 2.4 W3C Trace Context
+
+Estándar que define cómo viaja el contexto de una traza entre procesos. La
+cabecera es `traceparent` con cuatro campos:
+
+```text
+traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+             │  │                                │                │
+             │  └ trace-id (32 hex, común a toda la traza)
+             │                   └ parent-id / span-id (16 hex)
+             └ version                        └ flags (01 = sampled)
+```
+
+Acompañada de `tracestate` (datos específicos de proveedor) y de `baggage`
+(pares clave/valor de negocio que viajan con la traza). Sin este estándar, cada
+lenguaje generaría su propio `traceId` y la cascada se vería como peticiones
+sueltas.
+
+En el proyecto:
+
+- **HTTP**: el navegador/`curl` entra por el gateway, que crea el span raíz; el
+  proxy reenvía `traceparent` y `empleados-service` continúa **el mismo**
+  `traceId`. Node usa `W3CTraceContextPropagator + W3CBaggagePropagator`,
+  Java el agente (`OTEL_PROPAGATORS=tracecontext,baggage`), Go
+  `propagation.TraceContext{}`, Python y Ruby los propagadores homónimos.
+- **Asíncrono**: AMQP no tiene cabeceras HTTP, así que el contexto viaja en los
+  `headers` del mensaje. `vacaciones-service` abre un span raíz manual en el
+  scheduler e inyecta `traceparent`/`tracestate`/`baggage` al publicar;
+  `auth-service`, `perfiles-service` y `notificaciones-service` lo extraen del
+  mensaje y crean sus spans como hijos. Resultado: **una** traza para
+  scheduler → auth → notificaciones, no tres trazas independientes.
+
+---
+
+## 3. Librerías de instrumentación por servicio
+
+| Servicio | Lenguaje / framework | Métricas | Trazas (OTel) | Logs |
+|---|---|---|---|---|
+| `api-gateway` | Node.js 22 + Express 4 | `prom-client` (registry propio, default label `service`): `http_requests_total{method,route,code}`, `http_request_duration_seconds` + métricas de proceso | `@opentelemetry/sdk-node` + `auto-instrumentations-node` + `@opentelemetry/exporter-zipkin` | JSON con `timestamp, level, service, traceId, message` |
+| `auth-service` | Node.js 22 + Express 4 | `prom-client` (ídem) | ídem + inyección de `traceparent` en cabeceras AMQP al publicar | JSON con `traceId` |
+| `departamentos-service` | Node.js 22 + Express 4 | `prom-client` (ídem) | ídem gateway | JSON con `traceId` |
+| `empleados-service` | Java 21 + Spring Boot 3.2.5 | `micrometer-registry-prometheus` (`spring-boot-starter-actuator`): `/actuator/prometheus` y `/metrics` propio; `management.metrics.tags.application=empleados-service` | **OpenTelemetry Java agent v2.10.0** (`-javaagent`, sin cambios de código): `OTEL_SERVICE_NAME`, `OTEL_TRACES_EXPORTER=zipkin`, `OTEL_PROPAGATORS=tracecontext,baggage` | JSON (`JsonLogEncoder`) |
+| `perfiles-service` | Go 1.26 | `prometheus/client_golang` con registry propio + colectores Go/process: `http_requests_total`, `http_request_duration_seconds` | `go.opentelemetry.io/otel` + `exporters/zipkin` + `propagation.TraceContext`; `Extract` desde cabeceras AMQP | JSON con `trace_id` |
+| `notificaciones-service` | Python 3.12 + FastAPI | `prometheus-fastapi-instrumentator` (fallback a `prometheus_client`): `http_requests_total`, `http_request_duration_seconds` | `opentelemetry-sdk` + `opentelemetry-exporter-zipkin` + instrumentation `fastapi`/`sqlalchemy`; `extract` desde AMQP | JSON con `traceId` |
+| `vacaciones-service` | Ruby 3.3 + Sinatra | `prometheus-client` 5.x (con fallback de texto si la gema no está): `http_requests_total`, `http_request_duration_seconds`, `vacaciones_scheduler_transitions_total` | `opentelemetry-sdk` + `opentelemetry-exporter-zipkin` + instrumentation `rack`/`sinatra`/`bunny`; **span raíz manual del scheduler** e inyección en AMQP | JSON con `traceId` |
+
+En los tres servicios Node, `prom-client` fija la etiqueta `service` con
+`registry.setDefaultLabels()`; Prometheus además añade la etiqueta `service`
+desde el `scrape_job`. Cuando coinciden, Prometheus conserva la del propio
+servicio y renombra la del target a `exported_service` (sin error de scrape).
+Por eso los paneles agregan por `service` sin distinguir de dónde vino.
+
+---
+
+## 4. Elección del servidor de trazas: Zipkin (frente a Jaeger)
+
+| Criterio | Zipkin (elegido) | Jaeger |
+|---|---|---|
+| Despliegue | **1 contenedor**, sin dependencias; `STORAGE_TYPE=mem` | `all-in-one` viable; en producción collector + query + Cassandra/Elasticsearch |
+| Coste en el host | mínimo (el host ya corre ~23 contenedores: 6 servicios, 6 bases, broker, gateway, Jenkins, SonarQube, registry y el propio stack) | mayor (o al menos igual en all-in-one) |
+| UI | búsqueda por servicio/operación/traceId + cascada de spans | UI más rica (comparación de trazas, grafo de dependencias, SPM) |
+| Integración con Grafana | datasource nativo (`uid: zipkin`) + `tracesToLogsV2` | también nativo |
+| Exportadores OTel | `exporter-zipkin` (usado por los 5 lenguajes) | OTLP nativo (Jaeger acepta Zipkin como compat) |
+| Persistencia | memoria: las trazas se pierden al reiniciar | memoria por defecto; con storage persistente también aquí haría falta un backend extra |
+
+**Decisión: Zipkin.** Para una demo académica el objetivo es *ver la cascada de
+una petición*, no operar un backend de trazas: Zipkin da la UI, la API de
+ingesta y el datasource de Grafana con un solo contenedor y sin almacenamiento
+externo, y todos los SDK tienen exportador Zipkin listo. Jaeger sería la opción
+si se pidiera persistencia, búsqueda avanzada o SPM; migrar sería cambiar el
+exportador a OTLP y el datasource de Grafana. **Contrapartida asumida:** las
+trazas son volátiles (se pierden al recrear el contenedor) y no hay retención
+histórica ni comparación de trazas.
+
+---
+
+## 5. Dashboard consolidado (S4)
+
+Un único dashboard aprovisionado desde el repositorio:
+
+- Fichero: `observability/grafana/dashboards/reto8-ecosistema.json` (uid `reto8-ecosistema`).
+- Carpeta **Reto 8** (provista por `provisioning/dashboards/dashboards.yml`, `allowUiUpdates: false`; el directorio se monta `:ro`).
+- Variable `job` (multi + All) construida con `label_values(up, job)`.
+- Datasource referenciado por **uid** `prometheus`, nunca por nombre.
+- 2 filas y 7 paneles:
+
+| Fila | Panel | Tipo |
+|---|---|---|
+| Resumen | Estado de los servicios (`up{job}`) | Stat (verde `UP` / rojo `DOWN`) |
+| Resumen | Servicios caídos | Stat |
+| Resumen | Tráfico total (req/s) | Stat |
+| Resumen | Tasa de errores 5xx | Stat |
+| Tráfico | Peticiones por servicio (`rate(http_requests_total[1m])`) | Timeseries |
+| Tráfico | Latencia media (`rate(_sum)/rate(_count)`) | Timeseries |
+| Tráfico | Errores 4xx / 5xx por servicio | Timeseries |
+
+Los paneles llevan **una consulta por familia de métricas** porque los servicios
+no publican lo mismo (Node/Go/Ruby usan la etiqueta `code`; Python usa `status`;
+Java/micrometer expone `http_server_requests_seconds_count`). El detalle está en
+`observability/grafana/dashboards/README.md`.
+
+Verificación:
+
+```bash
+python3 -m json.tool observability/grafana/dashboards/reto8-ecosistema.json > /dev/null   # JSON válido
+grep -o '"uid": "[^"]*"' observability/grafana/dashboards/reto8-ecosistema.json | sort -u  # sólo prometheus (+ uid del dashboard)
+```
+
+---
+
+## 6. Alertas y canal de notificación (S5)
+
+### 6.1 Reglas aprovisionadas
+
+Unified alerting de Grafana se aprovisiona por fichero desde
+`observability/grafana/provisioning/alerting/` (el compose monta el directorio
+`provisioning` completo, así que este subdirectorio se carga sin tocar el
+compose):
+
+| Fichero | Contenido |
+|---|---|
+| `contact-points.yml` | contact point `reto8-telegram` (tipo `telegram`) |
+| `notification-policies.yml` | política por defecto → `reto8-telegram` (agrupado por `alertname` + `job`, `repeat_interval: 4h`) |
+| `alert-rules.yml` | grupo `reto8-ecosistema` en la carpeta **Reto 8** con las 2 reglas |
+
+| Regla | uid | Condición | `for` | Severidad |
+|---|---|---|---|---|
+| **Servicio Caído** | `reto8-servicio-caido` | `up{job}` de los 7 targets con umbral `< 1` (0 = caído) | 1m | critical |
+| **Alta Tasa de Errores** | `reto8-alta-tasa-errores` | `(5xx / total) > 0.10` sumando las tres familias de métricas | 2m | warning |
+
+Cada regla es la cadena estándar `consulta Prometheus → reduce(last) →
+threshold`; las dos apuntan al dashboard (`dashboardUid: reto8-ecosistema`,
+paneles 1 y 4) para que el enlace de la alerta abra el panel correcto. La regla
+de errores usa `or vector(0)` para no caer en `NoData` cuando algún servicio no
+tiene tráfico en la ventana.
+
+Verificación (con el stack vivo):
+
+```bash
+curl -s -u admin:admin http://localhost:3000/api/v1/provisioning/alert-rules | jq '.[].title'
+curl -s -u admin:admin http://localhost:3000/api/v1/provisioning/contact-points | jq '.[].name'
+docker compose logs grafana | grep -i -E "alerting|provision"   # errores de carga
+```
+
+> Las reglas viven en la carpeta **Reto 8**, que crea el proveedor de dashboards.
+> Si Grafana arranca con el `grafana-data` vacío y registra un error de "folder
+> not found" en el primer ciclo, el siguiente ciclo de aprovisionamiento lo
+> resuelve (o basta `docker compose restart grafana`).
+
+### 6.2 Canal de alertas elegido: bot de Telegram
+
+Se eligió **Telegram** por ser el canal de menor fricción sin infraestructura
+propia: `@BotFather` crea el bot en segundos y Grafana tiene el notifier
+`telegram` de serie (sin SMTP ni servidor de webhooks).
+
+**Paso a paso**
+
+1. En Telegram, hablar con **@BotFather** → `/newbot` → nombre y `username`.
+   BotFather devuelve el token (`123456789:AA...`). **No se commitea.**
+2. Abrir el chat con el bot y enviarle `/start` (o añadirlo al grupo destino).
+3. Obtener el `chat_id` (en grupos es negativo, p. ej. `-1001234567890`):
+
+```bash
+curl -s "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getUpdates" \
+  | jq -r '.result[-1].message.chat.id'
+```
+
+4. Probar el envío sin pasar por Grafana:
+
+```bash
+curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+  -d chat_id="$TELEGRAM_CHAT_ID" -d text="Reto 8: prueba del canal de alertas"
+```
+
+5. Poner las dos variables en `.env` (gitignored):
+
+```dotenv
+TELEGRAM_BOT_TOKEN=123456789:AA...
+TELEGRAM_CHAT_ID=-1001234567890
+```
+
+6. Pasarlas al contenedor de Grafana. **Pendiente (fuera del alcance de esta
+   tarea: `docker-compose.yml` y `.env.example` los cerró la tarea de
+   infraestructura T1)**: el servicio `grafana` necesita dos líneas más en su
+   bloque `environment` (y las dos claves documentadas en `.env.example`):
+
+```yaml
+    environment:
+      # … las que ya existen …
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+```
+
+   Sin ese paso el contact point queda con los placeholders sin resolver
+   (Grafana expande las variables del entorno del contenedor, que estarán
+   vacías) y el envío falla; la regla sí se evalúa y se ve en
+   *Alerting → Alert rules*.
+
+7. Grafana expande las variables al leer `contact-points.yml`; el contact point
+   aparece en *Alerting → Contact points* como `reto8-telegram`. Se puede probar
+   con el botón **Test**.
+
+**Seguridad:** el token sólo vive en `.env` (gitignored) y en el entorno del
+contenedor. Si se filtra, `/revoke` en BotFather lo invalida. En el repositorio
+sólo hay placeholders (`$TELEGRAM_BOT_TOKEN`, `$TELEGRAM_CHAT_ID`).
+
+### 6.3 Alternativa: Discord (no activa)
+
+En `contact-points.yml` está el receiver de Discord **comentado** a propósito
+(un contact point con webhook inexistente sólo ensucia los logs). Para usarlo:
+
+1. Servidor de Discord → *Configuración del canal* → **Integraciones → Webhooks
+   → Nuevo webhook** → *Copiar URL*.
+2. Exportar `DISCORD_WEBHOOK_URL` en el contenedor Grafana.
+3. Descomentar el bloque `reto8-discord` en `contact-points.yml` y cambiar el
+   `receiver` de `notification-policies.yml` a `reto8-discord`.
+
+---
+
+## 7. Logs con Loki (LogQL)
+
+Promtail etiqueta cada línea con `container`, `compose_service`,
+`compose_project` y `stream` (descubrimiento por socket de Docker), pero **no**
+parsea JSON en la ingesta: así no descarta líneas de texto plano. El parseo se
+hace en la consulta con el operador `| json`.
+
+```logql
+# Errores del gateway (los logs son JSON: timestamp, level, service, traceId, message)
+{compose_service="api-gateway"} | json | level="error"
+
+# Seguir una traza concreta en todos los servicios (mismo traceId que en Zipkin)
+{compose_service=~".+"} | json | traceId="4bf92f3577b34da6a3ce929d0e0e4736"
+```
+
+En Grafana: *Explore* → datasource **Loki** (`uid: loki`), o el botón de logs de
+un span de Zipkin (el datasource Zipkin está configurado con `tracesToLogsV2`).
+
+---
+
+## 8. Pruebas de caos
+
+> **Estado: PENDIENTE de stack vivo.** Esta sección documenta el procedimiento y
+> qué capturar; no hay capturas todavía (no se inventan). Ver
+> `evidencias/reto8/README-evidencias.md`.
+
+```bash
+# 0) Token y tráfico base (para que los paneles tengan series)
+ADMIN_TOKEN=$(curl -s -X POST http://localhost:8080/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@empresa.com","password":"Admin123!"}' | jq -r .token)
+
+for i in $(seq 1 30); do
+  curl -s -o /dev/null -w "%{http_code} " http://localhost:8080/empleados \
+    -H "Authorization: Bearer $ADMIN_TOKEN"
+done; echo
+```
+
+### Caos 1 — Servicio caído (regla `reto8-servicio-caido`)
+
+```bash
+# Detener SIN eliminar el contenedor: el target sigue declarado en
+# prometheus.yml, así que `up` pasa a 0. Si se quitara el target del scrape
+# (o el servicio cambiara de nombre/job), la serie desaparecería y la regla
+# quedaría en NoData en lugar de Firing.
+docker compose stop departamentos-service
+
+# esperar 2–3 min: scrape 15s + for 1m + group_wait 10s del contact point
+```
+
+Qué verificar y capturar:
+
+| Dónde | Resultado esperado | Captura |
+|---|---|---|
+| http://localhost:9091/targets | `departamentos-service` en **DOWN** | `reto8-prometheus-target-down.png` |
+| Dashboard → *Estado de los servicios* | tarjeta `departamentos-service` en rojo `DOWN` | `reto8-dashboard.png` |
+| *Alerting → Alert rules* | `Servicio Caído` en estado **Firing** | (opcional, misma captura de alertas) |
+| Chat de Telegram | mensaje con el `job` caído y la hora | `reto8-alerta-telegram.png` |
+
+```bash
+# recuperación: el panel vuelve a verde y, con disableResolveMessage=false,
+# Telegram recibe el aviso de resolución
+docker compose start departamentos-service
+```
+
+Efecto colateral esperado: el circuit breaker del gateway (Reto 3) abre a los 5
+fallos y `/departamentos` responde `503` desde el fallback; esas respuestas
+alimentan el panel de errores 4xx/5xx.
+
+### Caos 2 — Tasa de errores 5xx (regla `reto8-alta-tasa-errores`)
+
+```bash
+# Inducir 5xx sin tocar código: dejar un servicio sin su base de datos
+docker compose stop database-departamentos
+for i in $(seq 1 40); do
+  curl -s -o /dev/null -w "%{http_code} " http://localhost:8080/departamentos \
+    -H "Authorization: Bearer $ADMIN_TOKEN"
+done; echo
+# esperar 2–3 min con la tasa > 10%
+docker compose start database-departamentos
+```
+
+Qué verificar y capturar: `Tasa de errores 5xx` > 10% y panel *Errores 4xx/5xx
+por servicio* con la serie del servicio afectado; la regla debe pasar a
+**Firing** y llegar el mensaje `Alta Tasa de Errores` a Telegram.
+
+> **A confirmar con el stack vivo:** qué código devuelve realmente el servicio
+> con la BD caída (500 vs 503 vs 4xx). Si devolviera 4xx, el umbral de 5xx no se
+> dispararía y habría que inducir el error de otra forma (rama temporal con un
+> `throw`/`raise`, fuera del alcance de esta tarea) o ajustar el umbral.
+
+### Caos 3 — Trazas
+
+Con el tráfico del paso 0 y un alta de empleado, abrir http://localhost:9411 y
+capturar: (a) la cascada HTTP `api-gateway → empleados-service →
+departamentos-service` con un único `traceId`, y (b) la traza del scheduler de
+`vacaciones-service` → `auth-service` → `notificaciones-service` (una sola
+cascada, no tres trazas sueltas). Archivos: `reto8-zipkin-traza.png` y
+`reto8-zipkin-scheduler.png`.
+
+---
+
+## 9. Capturas
+
+**Pendientes de la validación con el stack vivo.** La checklist completa (qué
+debe mostrar cada imagen y cómo provocarla) está en
+[`evidencias/reto8/README-evidencias.md`](evidencias/reto8/README-evidencias.md).
+
+| Captura | Archivo | Estado |
+|---|---|---|
+| Dashboard con métricas reales de varios servicios | `reto8-dashboard.png` | pendiente |
+| Cascada de trazas en Zipkin (un solo traceId) | `reto8-zipkin-traza.png` | pendiente |
+| Traza del scheduler de vacaciones | `reto8-zipkin-scheduler.png` | pendiente |
+| Alerta recibida en Telegram | `reto8-alerta-telegram.png` | pendiente |
+| Target caído en Prometheus | `reto8-prometheus-target-down.png` | pendiente |
+
+---
+
+## 10. Pregunta de cierre
+
+> **¿Qué servicio del ecosistema tardó más en responder y cómo lo identificaron?**
+
+**Pendiente de medir con el stack vivo.** Procedimiento: en el panel *Latencia
+media por servicio* ordenar la tabla de leyenda por `max`, identificar el
+servicio con la línea más alta y abrir en Zipkin la traza más lenta para ver en
+qué span se concentra el tiempo (gateway, servicio o dependencia).
+
+---
+
+## 11. Validación sin stack vivo
+
+```bash
+python3 -m json.tool observability/grafana/dashboards/reto8-ecosistema.json > /dev/null
+ruby -ryaml -e 'Dir["observability/grafana/provisioning/alerting/*.yml"].each { |f| YAML.load_file(f) }'
+docker compose config --quiet
+grep -rn "uid:" observability/grafana/provisioning/alerting/ observability/grafana/dashboards/reto8-ecosistema.json
+```
+
+Los ficheros de alerting sólo se validan de verdad cuando Grafana los carga
+(`docker compose logs grafana | grep -i alerting`).
+

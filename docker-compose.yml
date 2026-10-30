@@ -449,6 +449,10 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      # Reto 8 T3: canal Telegram (contact-points.yml expande $TELEGRAM_*).
+      # Valores reales en .env (nunca en git); vacío = alertas sin envío.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
     volumes:
       - grafana-data:/var/lib/grafana                                    # persistencia
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro # datasources + dashboards
