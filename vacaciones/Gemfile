@@ -8,6 +8,14 @@ gem 'puma', '~> 6.4'
 gem 'bunny', '~> 2.22'
 gem 'pg', '~> 1.5'
 
+# Reto 8: observabilidad (métricas Prometheus + trazas OpenTelemetry/Zipkin).
+gem 'prometheus-client', '~> 5.0'
+gem 'opentelemetry-sdk', '~> 1.13'
+gem 'opentelemetry-exporter-zipkin', '~> 0.26'
+gem 'opentelemetry-instrumentation-rack', '~> 0.31'
+gem 'opentelemetry-instrumentation-sinatra', '~> 0.30'
+gem 'opentelemetry-instrumentation-bunny', '~> 0.25'
+
 group :test do
   # Reportes JUnit XML + cobertura para el Punto 1 del Reto 6.
   # Son gemas puras Ruby (sin extensiones nativas) compatibles con Ruby 3.3 y

@@ -2,6 +2,8 @@
 
 require 'date'
 
+require_relative 'observability'
+
 module Vacaciones
   # Reto 5: scheduler del ciclo de vida de las vacaciones.
   #
@@ -63,30 +65,51 @@ module Vacaciones
     end
 
     # One pass over both transitions. Returns [iniciadas, finalizadas] counts.
+    #
+    # Reto 8: el tick completo es el span raíz manual de la cascada del
+    # scheduler. Cada evento publicado hereda ese contexto vía AMQP headers
+    # (ver Publisher#publish) y los consumidores lo extraen para continuar la
+    # MISMA traza distribuida.
     def tick
       hoy = @today_provider.call
-
       iniciadas = []
-      @repo.por_iniciar(hoy).each do |periodo|
-        actualizado = @repo.marcar_en_curso(periodo['id'])
-        next if actualizado.nil? # ya no está PROGRAMADA: otro tick/instancia lo movió
-
-        iniciadas << actualizado
-        @publisher.publish_vacaciones_iniciadas(actualizado, email_de(actualizado['empleadoId']))
-      end
-
       finalizadas = []
-      @repo.por_finalizar(hoy).each do |periodo|
-        actualizado = @repo.marcar_finalizada(periodo['id'])
-        next if actualizado.nil? # ya no está EN_CURSO: nada que publicar
 
-        finalizadas << actualizado
-        @publisher.publish_vacaciones_finalizadas(actualizado, email_de(actualizado['empleadoId']))
+      Observability.tracer.in_span(
+        'vacaciones.scheduler.tick',
+        attributes: {
+          'scheduler.interval_s' => @intervalo,
+          'scheduler.today' => hoy.iso8601
+        }
+      ) do |span|
+        @repo.por_iniciar(hoy).each do |periodo|
+          actualizado = @repo.marcar_en_curso(periodo['id'])
+          next if actualizado.nil? # ya no está PROGRAMADA: otro tick/instancia lo movió
+
+          iniciadas << actualizado
+          @publisher.publish_vacaciones_iniciadas(actualizado, email_de(actualizado['empleadoId']))
+        end
+
+        @repo.por_finalizar(hoy).each do |periodo|
+          actualizado = @repo.marcar_finalizada(periodo['id'])
+          next if actualizado.nil? # ya no está EN_CURSO: nada que publicar
+
+          finalizadas << actualizado
+          @publisher.publish_vacaciones_finalizadas(actualizado, email_de(actualizado['empleadoId']))
+        end
+
+        span.set_attribute('vacaciones.iniciadas', iniciadas.size)
+        span.set_attribute('vacaciones.finalizadas', finalizadas.size)
       end
+
+      Observability.record_scheduler_transition('iniciadas', iniciadas.size)
+      Observability.record_scheduler_transition('finalizadas', finalizadas.size)
 
       if (iniciadas.size + finalizadas.size).positive?
+        ids = (iniciadas + finalizadas).map { |periodo| periodo['id'] }.compact.join(',')
         @logger.info(
-          "[scheduler] transiciones: #{iniciadas.size} EN_CURSO, #{finalizadas.size} FINALIZADA (hoy=#{hoy.iso8601})"
+          "[scheduler] transiciones: #{iniciadas.size} EN_CURSO, #{finalizadas.size} FINALIZADA " \
+          "(hoy=#{hoy.iso8601}, ids=#{ids})"
         )
       end
       [iniciadas.size, finalizadas.size]

@@ -6,7 +6,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,6 +16,7 @@ import (
 	"perfiles-service/internal/api"
 	"perfiles-service/internal/config"
 	"perfiles-service/internal/consumer"
+	"perfiles-service/internal/observability"
 	"perfiles-service/internal/store/postgres"
 )
 
@@ -24,10 +25,22 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	logger := observability.NewLogger("perfiles-service")
+
+	// ── OpenTelemetry (Reto 8) ──────────────────────────────────────────
+	shutdownTracing, err := observability.InitTracing(ctx, "perfiles-service")
+	if err != nil {
+		logger.Warn("perfiles-service: tracing disabled", slog.String("error", err.Error()))
+	}
+	defer observability.ShutdownWithTimeout(shutdownTracing, 5*time.Second)
+
+	metrics := observability.NewMetrics("perfiles-service")
+
 	// ── Store (Postgres) ────────────────────────────────────────────────
 	st, err := postgres.New(cfg.PostgresDSN())
 	if err != nil {
-		log.Fatalf("perfiles-service: postgres: %v", err)
+		logger.Error("perfiles-service: postgres", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 	defer st.Close()
 
@@ -38,23 +51,37 @@ func main() {
 			break
 		}
 		if i >= 15 {
-			log.Fatalf("perfiles-service: schema not ready: %v", err)
+			logger.Error("perfiles-service: schema not ready", slog.String("error", err.Error()))
+			os.Exit(1)
 		}
-		log.Printf("perfiles-service: waiting for postgres (%d): %v", i+1, err)
+		logger.Warn("perfiles-service: waiting for postgres",
+			slog.Int("attempt", i+1), slog.String("error", err.Error()))
 		select {
 		case <-ctx.Done():
-			log.Fatalf("perfiles-service: cancelled while waiting for postgres")
+			logger.Error("perfiles-service: cancelled while waiting for postgres")
+			os.Exit(1)
 		case <-time.After(2 * time.Second):
 		}
 	}
-	log.Printf("perfiles-service: schema ready")
+	logger.Info("perfiles-service: schema ready")
 
 	// ── REST API ────────────────────────────────────────────────────────
 	openapiYAML, err := os.ReadFile("openapi.yaml")
 	if err != nil {
-		log.Fatalf("perfiles-service: read openapi.yaml: %v", err)
+		logger.Error("perfiles-service: read openapi.yaml", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
-	server := &api.Server{Store: st}
+
+	// The consumer is created before the HTTP server so /health can report
+	// the real AMQP connection state.
+	cons := &consumer.Consumer{URL: cfg.RabbitMQURL, Store: st, Logger: logger}
+	server := &api.Server{
+		Store:        st,
+		HealthCheck:  st.Ping,
+		BrokerStatus: cons.BrokerStatus,
+		Metrics:      metrics,
+		Logger:       logger,
+	}
 
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -63,23 +90,28 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("perfiles-service: REST API listening on :%s", cfg.Port)
+		logger.Info("perfiles-service: REST API listening", slog.String("port", cfg.Port))
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("perfiles-service: http server: %v", err)
+			logger.Error("perfiles-service: http server", slog.String("error", err.Error()))
+			os.Exit(1)
 		}
 	}()
 
-	// ── AMQP consumer (blocks, retries with backoff) ───────────────────
-	log.Printf("perfiles-service: starting consumer (broker=%s)", cfg.RabbitMQURL)
-	if err := (&consumer.Consumer{URL: cfg.RabbitMQURL, Store: st}).Run(ctx); err != nil {
-		log.Printf("perfiles-service: consumer stopped: %v", err)
-	}
+	// ── AMQP consumer (background, retries with backoff) ───────────────
+	logger.Info("perfiles-service: starting consumer")
+	go func() {
+		if err := cons.Run(ctx); err != nil {
+			logger.Error("perfiles-service: consumer stopped", slog.String("error", err.Error()))
+		}
+	}()
 
-	// ── Graceful shutdown of the HTTP server ───────────────────────────
+	// Block until SIGINT/SIGTERM, then shut down gracefully.
+	<-ctx.Done()
+
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
-		log.Printf("perfiles-service: http shutdown: %v", err)
+		logger.Warn("perfiles-service: http shutdown", slog.String("error", err.Error()))
 	}
-	log.Printf("perfiles-service: stopped")
+	logger.Info("perfiles-service: stopped")
 }

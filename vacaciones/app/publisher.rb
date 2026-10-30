@@ -4,6 +4,8 @@ require 'json'
 require 'securerandom'
 require 'time'
 
+require_relative 'observability'
+
 module Vacaciones
   # Publisher for `vacaciones.programadas` and (Reto 5) the lifecycle events
   # `vacaciones.iniciadas` / `vacaciones.finalizadas` (extensión del catálogo 3.8).
@@ -41,7 +43,27 @@ module Vacaciones
     end
 
     def publish(routing_key, payload)
-      exchange.publish(payload, routing_key: routing_key, persistent: true, content_type: 'application/json')
+      # Reto 8: propaga W3C traceparent/tracestate/baggage en las cabeceras
+      # AMQP. Si el span raíz del scheduler está activo, los consumidores
+      # continúan exactamente esa traza (una sola cascada).
+      headers = Observability.inject_context({})
+      exchange.publish(
+        payload,
+        routing_key: routing_key,
+        persistent: true,
+        content_type: 'application/json',
+        headers: headers
+      )
+      Observability.record_event_published(routing_key)
+      evento = begin
+        JSON.parse(payload)
+      rescue StandardError
+        {}
+      end
+      @logger.info(
+        "[publisher] evento #{routing_key} id=#{evento['id']} " \
+        "(headers=#{headers.keys.sort.join(',')})"
+      )
       true
     rescue StandardError => e
       @logger.error("[publisher] fallo publicando '#{routing_key}' (sin rollback de BD): #{e.class}: #{e.message}")

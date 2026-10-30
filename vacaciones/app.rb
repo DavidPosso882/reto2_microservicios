@@ -7,6 +7,7 @@ require 'rack'
 require 'rackup'
 require 'rack/handler/puma'
 
+require_relative 'app/observability'
 require_relative 'app/config'
 require_relative 'app/database'
 require_relative 'app/id_generator'
@@ -27,17 +28,55 @@ module Vacaciones
     end
 
     before do
+      @request_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       content_type 'application/json'
       logger.info("#{request.request_method} #{request.path_info}")
+    end
+
+    after do
+      started = @request_started_at
+      next if started.nil? || request.path_info == '/metrics'
+
+      duration = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+      route = request.path_info
+                       .gsub(%r{/V-\d{4}-\d{4}}, '/:id')
+                       .gsub(%r{/[A-Z]\d{3,}}, '/:id')
+      Observability.record_request(request.request_method, route, response.status.to_s, duration)
     end
 
     def logger
       settings.logger
     end
 
-    # ── Health & docs ─────────────────────────────────────────────────────────
+    # ── Health & metrics (Reto 8) ──────────────────────────────────────────
     get '/health' do
-      JSON.generate(status: 'ok', service: 'vacaciones-service')
+      database = settings.respond_to?(:database) ? settings.database : nil
+      broker_probe = settings.respond_to?(:broker_status) ? settings.broker_status : nil
+
+      db_status = if database.nil?
+                    'N/A'
+                  else
+                    begin
+                      database.connection.exec('SELECT 1')
+                      'UP'
+                    rescue StandardError
+                      'DOWN'
+                    end
+                  end
+      broker_status = broker_probe ? broker_probe.call : 'N/A'
+      overall = [db_status, broker_status].include?('DOWN') ? 'DOWN' : 'UP'
+
+      status(overall == 'UP' ? 200 : 503)
+      JSON.generate(
+        status: overall,
+        service: 'vacaciones-service',
+        checks: { database: db_status, messageBroker: broker_status }
+      )
+    end
+
+    get '/metrics' do
+      content_type Observability::METRICS_CONTENT_TYPE
+      Observability.metrics_text
     end
 
     get '/openapi.yaml' do
@@ -133,10 +172,11 @@ module Vacaciones
   # Bootstraps configuration, database, repos, publisher and consumer thread.
   class Boot
     def self.build(env = ENV)
+      Observability.setup!
       config = Config.new(env)
       logger = Logger.new($stdout)
       logger.level = Logger::INFO
-      logger.formatter = proc { |_severity, _time, _prog, msg| "[vacaciones-service] #{msg}\n" }
+      logger.formatter = Observability.json_logger_formatter
 
       db = Database.new(config)
       db.ensure_schema
@@ -161,6 +201,8 @@ module Vacaciones
       App.set :config, config
       App.set :endpoints, endpoints
       App.set :logger, logger
+      App.set :database, db
+      App.set :broker_status, -> { consumer.connected? ? 'UP' : 'DOWN' }
 
       [App, consumer, scheduler, logger, config]
     end

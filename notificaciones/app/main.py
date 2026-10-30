@@ -5,15 +5,18 @@ from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
-from fastapi.responses import HTMLResponse
-from sqlalchemy import select
+from fastapi.responses import HTMLResponse, JSONResponse
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.consumer import detener_consumer, iniciar_consumer
+from app.consumer import detener_consumer, estado_broker, iniciar_consumer
 from app.db import Base, engine, get_session
 from app.models import Notificacion
 from app.mensajes import log_envio  # re-exported for tests
+from app.observability import setup_logging, setup_metrics, setup_tracing
+
+setup_logging()
 
 
 def _iso(dt: datetime | None) -> str | None:
@@ -58,6 +61,10 @@ def crear_app() -> FastAPI:
         redoc_url=None,
         openapi_url="/openapi.json",
     )
+
+    # Reto 8: métricas Prometheus y trazas OpenTelemetry/Zipkin.
+    setup_metrics(app)
+    setup_tracing(app, engine)
 
     @app.on_event("startup")
     def _startup() -> None:
@@ -109,8 +116,23 @@ def crear_app() -> FastAPI:
         )
 
     @app.get("/health")
-    def health():
-        return {"status": "ok", "service": "notificaciones-service"}
+    def health(session: Session = Depends(get_session)):
+        """Health real: DB (SELECT 1) + estado de la conexión AMQP."""
+        database = "UP"
+        try:
+            session.execute(text("SELECT 1"))
+        except Exception:
+            database = "DOWN"
+        broker = estado_broker()
+        overall = "DOWN" if "DOWN" in (database, broker) else "UP"
+        return JSONResponse(
+            status_code=200 if overall == "UP" else 503,
+            content={
+                "status": overall,
+                "service": "notificaciones-service",
+                "checks": {"database": database, "messageBroker": broker},
+            },
+        )
 
     return app
 

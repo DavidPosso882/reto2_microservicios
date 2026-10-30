@@ -27,6 +27,7 @@ from app.mensajes import (
     construir_notificacion,
     log_envio,
 )
+from app.observability import extracted_context, tracer
 
 logger = logging.getLogger("notificaciones.consumer")
 
@@ -120,6 +121,7 @@ class Consumer:
         self._channel = None
         self._stop = threading.Event()
         self._backoff_transitorio_s = REQUEUE_BACKOFF_INICIAL_S
+        self.connected = False
 
     # -- broker plumbing -------------------------------------------------
 
@@ -150,6 +152,7 @@ class Consumer:
         while not self._stop.is_set() and intento <= REINTENTOS_MAX:
             try:
                 self._connection = self._conectar()
+                self.connected = True
                 logger.info("Conectado a RabbitMQ en %s:%s.", self._host, self._port)
                 return
             except AMQPConnectionError:
@@ -173,6 +176,7 @@ class Consumer:
 
     def _on_message(self, channel, method, properties, body):
         routing_key = getattr(method, "routing_key", "?")
+        headers = getattr(properties, "headers", None) or {}
         try:
             envelope = json.loads(body)
         except (json.JSONDecodeError, UnicodeDecodeError):
@@ -185,45 +189,64 @@ class Consumer:
             channel.basic_ack(delivery_tag=method.delivery_tag)
             return
 
-        session = SessionLocal()
-        try:
-            procesar_evento(session, envelope)
-        except MensajeEnvenenado as exc:
-            # Poison: permanent payload error. Requeueing would loop forever
-            # and block the queue; discard with ACK instead.
-            session.rollback()
-            logger.error(
-                "Mensaje envenenado descartado con ACK (id=%s, routing_key=%s): %s",
-                envelope.get("id", "?") if isinstance(envelope, dict) else "?",
-                routing_key,
-                exc,
-            )
-            channel.basic_ack(delivery_tag=method.delivery_tag)
-            return
-        except Exception:
-            session.rollback()
-            # Transient (e.g. DB down): requeue so the event is not lost,
-            # pausing with exponential backoff so an outage cannot hot-loop.
-            if not self._stop.is_set():
-                self._stop.wait(self._backoff_transitorio_s)
-                self._backoff_transitorio_s = min(
-                    self._backoff_transitorio_s * 2, REQUEUE_BACKOFF_MAX_S
-                )
-            channel.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
-            logger.exception(
-                "Error transitorio persistiendo evento (routing_key=%s); "
-                "se reencola con backoff.",
-                routing_key,
-            )
-            return
-        finally:
-            session.close()
-        self._backoff_transitorio_s = REQUEUE_BACKOFF_INICIAL_S
-        # Manual ACK only AFTER the effect is persisted (or duplicate skipped).
-        channel.basic_ack(delivery_tag=method.delivery_tag)
+        # Reto 8: continúa la traza W3C recibida en las cabeceras AMQP
+        # (traceparent/tracestate/baggage del scheduler o productor).
+        with extracted_context(headers) as ctx:
+            with tracer().start_as_current_span(
+                "notificaciones.consumir_evento",
+                context=ctx,
+                attributes={
+                    "messaging.system": "rabbitmq",
+                    "messaging.destination": QUEUE,
+                    "messaging.operation": "process",
+                    "event.type": routing_key,
+                },
+            ) as span:
+                if isinstance(envelope, dict):
+                    span.set_attribute("event.id", str(envelope.get("id", "")))
+
+                session = SessionLocal()
+                try:
+                    procesar_evento(session, envelope)
+                except MensajeEnvenenado as exc:
+                    # Poison: permanent payload error. Requeueing would loop forever
+                    # and block the queue; discard with ACK instead.
+                    session.rollback()
+                    logger.error(
+                        "Mensaje envenenado descartado con ACK (id=%s, routing_key=%s): %s",
+                        envelope.get("id", "?") if isinstance(envelope, dict) else "?",
+                        routing_key,
+                        exc,
+                    )
+                    channel.basic_ack(delivery_tag=method.delivery_tag)
+                    return
+                except Exception:
+                    session.rollback()
+                    # Transient (e.g. DB down): requeue so the event is not lost,
+                    # pausing with exponential backoff so an outage cannot hot-loop.
+                    if not self._stop.is_set():
+                        self._stop.wait(self._backoff_transitorio_s)
+                        self._backoff_transitorio_s = min(
+                            self._backoff_transitorio_s * 2, REQUEUE_BACKOFF_MAX_S
+                        )
+                    channel.basic_nack(
+                        delivery_tag=method.delivery_tag, requeue=True
+                    )
+                    logger.exception(
+                        "Error transitorio persistiendo evento (routing_key=%s); "
+                        "se reencola con backoff.",
+                        routing_key,
+                    )
+                    return
+                finally:
+                    session.close()
+                self._backoff_transitorio_s = REQUEUE_BACKOFF_INICIAL_S
+                # Manual ACK only AFTER the effect is persisted (or duplicate skipped).
+                channel.basic_ack(delivery_tag=method.delivery_tag)
 
     def _cerrar(self):
         """Close channel/connection best-effort before a reconnect pass."""
+        self.connected = False
         try:
             if self._channel is not None:
                 self._channel.close()
@@ -278,6 +301,7 @@ class Consumer:
 
     def stop(self):
         self._stop.set()
+        self.connected = False
         try:
             if self._channel and self._channel.is_open:
                 self._channel.stop_consuming()
@@ -313,3 +337,12 @@ def detener_consumer() -> None:
         _consumer_thread.join(timeout=2)
     _consumer = None
     _consumer_thread = None
+
+
+def estado_broker() -> str:
+    """Estado real del broker para /health: UP, DOWN o N/A (consumer apagado)."""
+    if not settings.consumer_enabled:
+        return "N/A"
+    if _consumer is None:
+        return "DOWN"
+    return "UP" if _consumer.connected else "DOWN"

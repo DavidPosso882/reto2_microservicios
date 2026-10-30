@@ -4,6 +4,8 @@ import os
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["CONSUMER_ENABLED"] = "false"
+# Reto 8: la suite no debe intentar exportar trazas a Zipkin.
+os.environ["OTEL_SDK_DISABLED"] = "true"
 
 import pytest
 from fastapi.testclient import TestClient

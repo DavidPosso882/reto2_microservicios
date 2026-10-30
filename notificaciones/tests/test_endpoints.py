@@ -50,6 +50,23 @@ def test_filtrar_por_empleado(cliente, sesion):
     assert resp.json() == []
 
 
+def test_health_expone_status_y_checks(cliente):
+    resp = cliente.get("/health")
+    assert resp.status_code == 200
+    cuerpo = resp.json()
+    assert cuerpo["status"] == "UP"
+    assert cuerpo["service"] == "notificaciones-service"
+    assert set(cuerpo["checks"]) == {"database", "messageBroker"}
+
+
+def test_metrics_expone_formato_prometheus(cliente):
+    cliente.get("/notificaciones")
+    resp = cliente.get("/metrics")
+    assert resp.status_code == 200
+    assert "http_requests_total" in resp.text
+    assert "http_request_duration_seconds" in resp.text
+
+
 def test_serializacion_camel_case_con_valores(cliente, sesion):
     n = persistir(sesion, "vacaciones.programadas", {
         "id": "V-2026-0042", "empleadoId": "E001",

@@ -13,11 +13,13 @@ package consumer
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
+	"sync/atomic"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
+	"perfiles-service/internal/observability"
 	"perfiles-service/internal/store"
 )
 
@@ -38,8 +40,26 @@ var routingKeys = []string{
 
 // Consumer consumes ecosystem events and applies them through the store.
 type Consumer struct {
-	URL   string
-	Store store.Store
+	URL    string
+	Store  store.Store
+	Logger *slog.Logger
+
+	connected atomic.Bool
+}
+
+// BrokerStatus reports real AMQP connectivity for /health.
+func (c *Consumer) BrokerStatus() string {
+	if c.connected.Load() {
+		return "UP"
+	}
+	return "DOWN"
+}
+
+func (c *Consumer) logger() *slog.Logger {
+	if c.Logger != nil {
+		return c.Logger
+	}
+	return observability.NewLogger("perfiles-service")
 }
 
 // Run blocks consuming events until ctx is cancelled. Every connection or
@@ -55,7 +75,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 		if err == nil {
 			err = fmt.Errorf("consume loop exited unexpectedly")
 		}
-		log.Printf("perfiles-consumer: %v; retrying in %s", err, delay)
+		c.logger().Warn("perfiles-consumer: retrying", slog.String("error", err.Error()), slog.Duration("delay", delay))
 		select {
 		case <-ctx.Done():
 			return nil
@@ -74,6 +94,8 @@ func (c *Consumer) consumeOnce(ctx context.Context) error {
 		return fmt.Errorf("dial: %w", err)
 	}
 	defer conn.Close()
+	c.connected.Store(true)
+	defer c.connected.Store(false)
 
 	ch, err := conn.Channel()
 	if err != nil {
@@ -99,7 +121,10 @@ func (c *Consumer) consumeOnce(ctx context.Context) error {
 		return fmt.Errorf("consume: %w", err)
 	}
 
-	log.Printf("perfiles-consumer: consuming %s (exchange=%s)", QueueName, Exchange)
+	c.logger().Info("perfiles-consumer: consuming",
+		slog.String("queue", QueueName),
+		slog.String("exchange", Exchange),
+	)
 	for {
 		select {
 		case <-ctx.Done():

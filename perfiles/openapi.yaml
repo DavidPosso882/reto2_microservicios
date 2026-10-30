@@ -22,7 +22,7 @@ servers:
 paths:
   /health:
     get:
-      summary: Health check propio del servicio
+      summary: Health check propio del servicio (DB + broker)
       operationId: getHealth
       responses:
         "200":
@@ -34,10 +34,21 @@ paths:
                 properties:
                   status:
                     type: string
-                    example: ok
+                    example: UP
                   service:
                     type: string
                     example: perfiles-service
+                  checks:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                        example: UP
+                      messageBroker:
+                        type: string
+                        example: UP
+        "503":
+          description: Alguna dependencia (DB o broker) está DOWN
 
   /openapi.yaml:
     get:

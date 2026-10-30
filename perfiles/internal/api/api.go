@@ -7,10 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
+	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"perfiles-service/internal/domain"
+	"perfiles-service/internal/observability"
 	"perfiles-service/internal/store"
 )
 
@@ -25,6 +29,13 @@ type Store interface {
 // Server serves the REST API of perfiles-service.
 type Server struct {
 	Store Store
+
+	// Reto 8: real health probes and observability wiring. Optional so the
+	// existing httptest-based tests keep working with the in-memory store.
+	HealthCheck  func(context.Context) error
+	BrokerStatus func() string
+	Metrics      *observability.Metrics
+	Logger       *slog.Logger
 }
 
 // swaggerUIHTML is a dependency-free docs page: SwaggerUI from CDN loading
@@ -40,16 +51,54 @@ const swaggerUIHTML = `<!DOCTYPE html>
 <script>window.onload=()=>{SwaggerUIBundle({url:"./openapi.yaml",dom_id:"#swagger-ui"})};</script>
 </body></html>`
 
-// Handler builds the HTTP mux: REST routes, health and OpenAPI spec.
+// Handler builds the HTTP mux: REST routes, health, metrics and OpenAPI spec.
 func (s *Server) Handler(openapiYAML []byte) http.Handler {
 	mux := http.NewServeMux()
+	metrics := s.Metrics
+	if metrics == nil {
+		metrics = observability.NewMetrics("perfiles-service")
+	}
+	logger := s.Logger
+	if logger == nil {
+		logger = observability.NewLogger("perfiles-service")
+	}
 
 	mux.HandleFunc("GET /perfiles", s.handleList)
 	mux.HandleFunc("GET /perfiles/{empleadoId}", s.handleGet)
 	mux.HandleFunc("PUT /perfiles/{empleadoId}", s.handleUpdate)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "perfiles-service"})
+		database := "N/A"
+		if s.HealthCheck != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			if err := s.HealthCheck(ctx); err != nil {
+				database = "DOWN"
+			} else {
+				database = "UP"
+			}
+		}
+		broker := "N/A"
+		if s.BrokerStatus != nil {
+			broker = s.BrokerStatus()
+		}
+		overall := "UP"
+		if database == "DOWN" || broker == "DOWN" {
+			overall = "DOWN"
+		}
+		code := http.StatusOK
+		if overall == "DOWN" {
+			code = http.StatusServiceUnavailable
+		}
+		writeJSON(w, code, map[string]any{
+			"status":  overall,
+			"service": "perfiles-service",
+			"checks": map[string]string{
+				"database":      database,
+				"messageBroker": broker,
+			},
+		})
 	})
+	mux.Handle("GET /metrics", metrics.Handler())
 	mux.HandleFunc("GET /openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/yaml")
 		_, _ = w.Write(openapiYAML)
@@ -67,7 +116,18 @@ func (s *Server) Handler(openapiYAML []byte) http.Handler {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(swaggerUIHTML))
 	})
-	return mux
+
+	// Orden: otelhttp crea el span servidor (y deja el traceId en el
+	// contexto), RequestLogger lo lee, Metrics registra RED y el mux atiende.
+	instrumented := observability.RequestLogger(logger, metrics.Middleware(mux))
+	return otelhttp.NewHandler(instrumented, "perfiles-service")
+}
+
+func (s *Server) logger() *slog.Logger {
+	if s.Logger != nil {
+		return s.Logger
+	}
+	return observability.NewLogger("perfiles-service")
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -83,7 +143,8 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 	perfiles, err := s.Store.List(r.Context())
 	if err != nil {
-		log.Printf("perfiles-api: list perfiles: %v", err)
+		s.logger().ErrorContext(r.Context(), "perfiles-api: list perfiles",
+			slog.String("error", err.Error()))
 		writeError(w, http.StatusInternalServerError, "Error interno al listar perfiles")
 		return
 	}
@@ -98,7 +159,8 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		log.Printf("perfiles-api: get perfil %s: %v", empleadoID, err)
+		s.logger().ErrorContext(r.Context(), "perfiles-api: get perfil",
+			slog.String("empleadoId", empleadoID), slog.String("error", err.Error()))
 		writeError(w, http.StatusInternalServerError, "Error interno al obtener el perfil")
 		return
 	}
@@ -120,7 +182,8 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		log.Printf("perfiles-api: update perfil %s: %v", empleadoID, err)
+		s.logger().ErrorContext(r.Context(), "perfiles-api: update perfil",
+			slog.String("empleadoId", empleadoID), slog.String("error", err.Error()))
 		writeError(w, http.StatusInternalServerError, "Error interno al actualizar el perfil")
 		return
 	}

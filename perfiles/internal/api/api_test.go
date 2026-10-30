@@ -4,8 +4,10 @@ package api_test
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"perfiles-service/internal/api"
@@ -177,12 +179,45 @@ func TestPutPerfilCuerpoInvalido(t *testing.T) {
 	}
 }
 
-// TestHealth: GET /health → 200.
+// TestHealth: GET /health → 200 con el contrato Reto 8.
 func TestHealth(t *testing.T) {
 	ts, _ := newServer(t)
 	res, out := doJSON(t, "GET", ts.URL+"/health", nil)
-	if res.StatusCode != http.StatusOK || out["status"] != "ok" {
+	if res.StatusCode != http.StatusOK || out["status"] != "UP" {
 		t.Fatalf("health: %d %v", res.StatusCode, out)
+	}
+	checks, ok := out["checks"].(map[string]any)
+	if !ok {
+		t.Fatalf("health must expose checks: %v", out)
+	}
+	for _, key := range []string{"database", "messageBroker"} {
+		if _, ok := checks[key]; !ok {
+			t.Errorf("missing health check %q in: %v", key, checks)
+		}
+	}
+}
+
+// TestMetrics: GET /metrics → Prometheus text with HTTP + process metrics.
+func TestMetrics(t *testing.T) {
+	ts, _ := newServer(t)
+	// One request first so http_requests_total has a sample.
+	if _, err := http.Get(ts.URL + "/perfiles"); err != nil {
+		t.Fatalf("get perfiles: %v", err)
+	}
+	res, err := http.Get(ts.URL + "/metrics")
+	if err != nil {
+		t.Fatalf("get metrics: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.StatusCode)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	body := string(raw)
+	for _, needle := range []string{"process_cpu_seconds_total", "http_requests_total", "http_request_duration_seconds"} {
+		if !strings.Contains(body, needle) {
+			t.Errorf("metrics missing %q:\n%s", needle, body)
+		}
 	}
 }
 

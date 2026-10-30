@@ -68,6 +68,11 @@ CREATE TABLE IF NOT EXISTS eventos_procesados (
 // Close closes the pool.
 func (s *Store) Close() error { return s.db.Close() }
 
+// Ping verifies real database connectivity for the /health endpoint.
+func (s *Store) Ping(ctx context.Context) error {
+	return s.db.PingContext(ctx)
+}
+
 // ApplyEvent applies the event effect and records the event id inside ONE
 // transaction (ACK-after-persist contract of CATALOGO_EVENTOS.md section 2).
 //
