@@ -7,6 +7,7 @@ import {
   verifyToken,
 } from '../tokens.js';
 import { validarPoliticaPassword } from '../passwordPolicy.js';
+import { logger } from '../observability/logger.js';
 
 export const ESTADO_ACTIVA = 'ACTIVA';
 export const ESTADO_SUSPENDIDA_TEMPORAL = 'SUSPENDIDA_TEMPORAL';
@@ -49,8 +50,10 @@ export class UsuarioService {
       } catch (err) {
         // Publishing a lifecycle event must not fail the HTTP/crud operation:
         // the broker consumer side is what retries/dedups.
-        // eslint-disable-next-line no-console
-        console.warn(`[auth] No se pudo publicar ${type}: ${err.message}`);
+        logger.warn('event_publish_failed', {
+          eventType: type,
+          error: err.message,
+        });
       }
     }
   }

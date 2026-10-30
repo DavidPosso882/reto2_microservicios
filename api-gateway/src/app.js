@@ -1,6 +1,14 @@
 import express from 'express';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { authenticate, authorizeService, forwardIdentity } from './middleware/auth.js';
+import { accessLogMiddleware } from './observability/http.js';
+import {
+  gatewayRoute,
+  getMetrics,
+  metricsHandler,
+  metricsMiddleware,
+} from './observability/metrics.js';
+import { injectContext } from './observability/tracing.js';
 
 /**
  * Builds the API Gateway application (Reto 3).
@@ -58,11 +66,23 @@ export function createGateway({
   authUrl,
 }) {
   const app = express();
+  const metrics = getMetrics('api-gateway');
+
+  // Reto 8: access log JSON + métricas RED antes de cualquier ruta.
+  app.use(accessLogMiddleware);
+  app.use(metricsMiddleware(metrics, gatewayRoute));
 
   // Own health check: proves the edge itself is alive, independently of upstreams.
+  // The gateway has no database or broker of its own, so those checks are N/A.
   app.get('/health', (req, res) => {
-    res.status(200).json({ status: 'ok', service: 'api-gateway' });
+    res.status(200).json({
+      status: 'UP',
+      service: 'api-gateway',
+      checks: { database: 'N/A', messageBroker: 'N/A' },
+    });
   });
+
+  app.get('/metrics', (req, res) => metricsHandler(metrics, req, res));
 
   // When the destination does not answer (down, refused, timeout), answer 503
   // with the house JSON envelope instead of leaking a framework error page.
@@ -74,6 +94,16 @@ export function createGateway({
       status: 503,
       error: `El servicio de ${servicio} no está disponible en este momento`,
     });
+  };
+
+  // Propaga el contexto W3C (traceparent/tracestate/baggage) al upstream.
+  // La instrumentación HTTP también lo hace; esto lo garantiza incluso si el
+  // proxy usa su propio cliente.
+  const propagateTrace = (proxyReq) => {
+    const carrier = injectContext({});
+    for (const [key, value] of Object.entries(carrier)) {
+      proxyReq.setHeader(key, value);
+    }
   };
 
   const proxyOptions = (target, servicio, prefijo) => ({
@@ -93,6 +123,7 @@ export function createGateway({
     proxyTimeout: 30000,
     timeout: 30000,
     on: {
+      proxyReq: propagateTrace,
       error: proxyErrorHandler(servicio),
     },
   });
@@ -243,6 +274,7 @@ export function createGateway({
     proxyTimeout: 30000,
     timeout: 30000,
     on: {
+      proxyReq: propagateTrace,
       error: proxyErrorHandler(servicio),
     },
   });

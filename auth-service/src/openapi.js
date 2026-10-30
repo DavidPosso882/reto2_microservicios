@@ -183,9 +183,12 @@ const spec = {
     },
     '/health': {
       get: {
-        summary: 'Health check propio del servicio',
+        summary: 'Health check propio del servicio (DB + broker)',
         security: [],
-        responses: { 200: { description: 'Servicio vivo' } },
+        responses: {
+          200: { description: 'Servicio saludable (status UP)' },
+          503: { description: 'Alguna dependencia (DB o broker) está DOWN' },
+        },
       },
     },
   },

@@ -423,6 +423,17 @@ describe('Responses y documentación', () => {
     const res = await request(app).get('/health');
     assert.equal(res.status, 200);
     assert.equal(res.body.service, 'auth-service');
+    assert.equal(res.body.status, 'UP');
+    assert.deepEqual(Object.keys(res.body.checks).sort(), ['database', 'messageBroker']);
+  });
+
+  test('metrics expone formato Prometheus', async () => {
+    const { app } = contenedores();
+    await request(app).get('/health');
+    const res = await request(app).get('/metrics');
+    assert.equal(res.status, 200);
+    assert.match(res.text, /http_requests_total/);
+    assert.match(res.text, /process_cpu_seconds_total/);
   });
 
   test('openapi.yaml expone BearerAuth y los 5 endpoints /auth', async () => {

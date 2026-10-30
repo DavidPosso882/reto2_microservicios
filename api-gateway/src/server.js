@@ -1,5 +1,13 @@
 import 'dotenv/config';
-import { createGateway } from './app.js';
+import { startTelemetry, shutdownTelemetry } from './observability/telemetry.js';
+import { logger } from './observability/logger.js';
+
+// Reto 8: OpenTelemetry debe arrancar ANTES de cargar express/pg/amqplib para
+// que la auto-instrumentación parchee esos módulos. Por eso app.js se importa
+// dinámicamente después de startTelemetry().
+startTelemetry('api-gateway');
+
+const { createGateway } = await import('./app.js');
 
 const port = Number(process.env.PORT || 8080);
 // Inside the Docker network these resolve via the Compose service names.
@@ -23,7 +31,18 @@ const app = createGateway({
   authUrl,
 });
 
-app.listen(port, () => {
-  // eslint-disable-next-line no-console
-  console.log(`API Gateway listening on http://localhost:${port}`);
+const server = app.listen(port, () => {
+  logger.info('api_gateway_listening', { port });
 });
+
+async function shutdown(signal) {
+  logger.info('shutdown_started', { signal });
+  server.close(async () => {
+    await shutdownTelemetry();
+    logger.info('shutdown_completed', { signal });
+    process.exit(0);
+  });
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

@@ -1,5 +1,8 @@
 import amqp from 'amqplib';
 import { randomUUID } from 'node:crypto';
+import { context, trace } from '@opentelemetry/api';
+import { logger } from './observability/logger.js';
+import { extractContext, injectContext, tracer } from './observability/tracing.js';
 
 /**
  * RabbitMQ integration for auth-service (CATALOGO_EVENTOS.md §2).
@@ -59,10 +62,11 @@ async function conectarConBackoff() {
     try {
       return await _connect();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[auth] Message broker no disponible (intento ${intento}/${REINTENTOS_MAX}): ${err.message}`
-      );
+      logger.warn('rabbit_connect_retry', {
+        attempt: intento,
+        maxAttempts: REINTENTOS_MAX,
+        error: err.message,
+      });
       if (intento === REINTENTOS_MAX) {
         throw err;
       }
@@ -96,8 +100,7 @@ export async function aplicarEvento(service, envelope) {
     default:
       // Unknown routing key: cannot belong to this consumer's contract, ACK
       // and drop (the queue only receives bound keys, but stay defensive).
-      // eslint-disable-next-line no-console
-      console.warn(`[auth] Tipo de evento desconocido: ${envelope.type}; se descarta.`);
+      logger.warn('unknown_event', { eventType: envelope.type });
   }
 }
 
@@ -122,39 +125,58 @@ export async function iniciarConsumidor(service) {
 
   await channel.consume(QUEUE, async (msg) => {
     if (!msg) return;
-    try {
-      const envelope = JSON.parse(msg.content.toString());
-      const eventoId = envelope && envelope.id;
-      if (!eventoId) {
-        // Poison message: cannot dedup or apply; drop it with ACK.
-        // eslint-disable-next-line no-console
-        console.warn('[auth] Evento sin id; se descarta (ACK, sin requeue).');
+    const headers = (msg.properties && msg.properties.headers) || {};
+    const parentContext = extractContext(headers);
+    const span = tracer('auth-service').startSpan(
+      'auth.consumir_evento',
+      {
+        attributes: {
+          'messaging.system': 'rabbitmq',
+          'messaging.destination': QUEUE,
+          'messaging.operation': 'process',
+        },
+      },
+      parentContext,
+    );
+
+    return context.with(trace.setSpan(parentContext, span), async () => {
+      try {
+        const envelope = JSON.parse(msg.content.toString());
+        const eventoId = envelope && envelope.id;
+        span.setAttribute('event.id', String(eventoId || ''));
+        span.setAttribute('event.type', String((envelope && envelope.type) || ''));
+        if (!eventoId) {
+          // Poison message: cannot dedup or apply; drop it with ACK.
+          logger.warn('event_without_id');
+          channel.ack(msg);
+          return;
+        }
+        if (await service.store.procesados(eventoId)) {
+          logger.info('duplicate_event', { eventId: eventoId });
+          channel.ack(msg);
+          return;
+        }
+        await aplicarEvento(service, envelope);
+        await service.store.marcarProcesado(eventoId);
+        requeueDelay = REQUEUE_BACKOFF_INICIAL_MS;
         channel.ack(msg);
-        return;
+      } catch (err) {
+        logger.error('event_processing_failed', { error: err.message });
+        channel.nack(msg, false, true);
+        await sleep(requeueDelay);
+        requeueDelay = Math.min(requeueDelay * 2, REQUEUE_BACKOFF_MAX_MS);
+      } finally {
+        span.end();
       }
-      if (await service.store.procesados(eventoId)) {
-        // eslint-disable-next-line no-console
-        console.log(`[auth] Evento duplicado (id=${eventoId}); se ignora.`);
-        channel.ack(msg);
-        return;
-      }
-      await aplicarEvento(service, envelope);
-      await service.store.marcarProcesado(eventoId);
-      requeueDelay = REQUEUE_BACKOFF_INICIAL_MS;
-      channel.ack(msg);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[auth] Error procesando evento (requeue):', err.message);
-      channel.nack(msg, false, true);
-      await sleep(requeueDelay);
-      requeueDelay = Math.min(requeueDelay * 2, REQUEUE_BACKOFF_MAX_MS);
-    }
+    });
   });
 
   // eslint-disable-next-line no-console
-  console.log(
-    `[auth] Consumidor listo: queue=${QUEUE} exchange=${EXCHANGE} keys=${ROUTING_KEYS.join(', ')}`
-  );
+  logger.info('consumer_ready', {
+    queue: QUEUE,
+    exchange: EXCHANGE,
+    routingKeys: ROUTING_KEYS,
+  });
   return { connection, channel };
 }
 
@@ -179,8 +201,16 @@ export function crearPublicadorEventos(getChannel) {
     };
     channel.publish(EXCHANGE, type, Buffer.from(JSON.stringify(envelope)), {
       persistent: true,
+      // Reto 8: propaga W3C traceparent/tracestate/baggage en AMQP.
+      headers: injectContext({}),
     });
-    // eslint-disable-next-line no-console
-    console.log(`[auth] Evento publicado: ${type} (id=${envelope.id})`);
+    logger.info('event_published', { eventType: type, eventId: envelope.id });
   };
+}
+
+/** Real broker probe for /health. */
+export async function verificarBroker(channel) {
+  if (!channel) return 'DOWN';
+  await channel.checkQueue(QUEUE);
+  return 'UP';
 }

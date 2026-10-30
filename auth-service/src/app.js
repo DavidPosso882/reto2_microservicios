@@ -5,6 +5,14 @@ import { createAuthRouter } from './routes/authRoutes.js';
 import { UsuarioService } from './service/UsuarioService.js';
 import { AppError } from './errors.js';
 import { openapiSpec, swaggerUiOptions } from './openapi.js';
+import { accessLogMiddleware } from './observability/http.js';
+import {
+  getMetrics,
+  metricsHandler,
+  metricsMiddleware,
+  normalizeRoute,
+} from './observability/metrics.js';
+import { logger } from './observability/logger.js';
 
 /**
  * Builds the auth-service Express application (Reto 5).
@@ -17,9 +25,14 @@ import { openapiSpec, swaggerUiOptions } from './openapi.js';
  * @param {object} deps.store - account + dedup store (Pg or InMemory).
  * @param {Function} [deps.eventPublisher] - async (type, data) => void.
  */
-export function createApp({ store, eventPublisher = null }) {
+export function createApp({ store, eventPublisher = null, healthChecks = {} }) {
   const app = express();
   const service = new UsuarioService(store, { eventPublisher });
+  const metrics = getMetrics('auth-service');
+
+  // Reto 8: access log JSON + métricas RED.
+  app.use(accessLogMiddleware);
+  app.use(metricsMiddleware(metrics, normalizeRoute));
 
   app.use(express.json());
 
@@ -32,9 +45,18 @@ export function createApp({ store, eventPublisher = null }) {
   // Business endpoints under /auth (gateway will whitelist /auth/*).
   app.use('/auth', createAuthRouter({ service }));
 
-  app.get('/health', (req, res) => {
-    res.status(200).json({ status: 'ok', service: 'auth-service' });
+  app.get('/health', async (req, res) => {
+    const database = await runHealthCheck(healthChecks.database);
+    const messageBroker = await runHealthCheck(healthChecks.messageBroker);
+    const status = database === 'DOWN' || messageBroker === 'DOWN' ? 'DOWN' : 'UP';
+    res.status(status === 'UP' ? 200 : 503).json({
+      status,
+      service: 'auth-service',
+      checks: { database, messageBroker },
+    });
   });
+
+  app.get('/metrics', (req, res) => metricsHandler(metrics, req, res));
 
   // Unknown routes -> 404 envelope.
   app.use((req, res) => {
@@ -49,7 +71,7 @@ export function createApp({ store, eventPublisher = null }) {
 
     if (status >= 500) {
       // eslint-disable-next-line no-console
-      console.error(err);
+      logger.error('internal_error', { error: err.message });
     }
 
     res.status(status).json({ status, error: message });
@@ -58,4 +80,16 @@ export function createApp({ store, eventPublisher = null }) {
   // Expose the singleton service for the server bootstrap (rabbit wiring).
   app.locals.authService = service;
   return app;
+}
+
+/** Runs a health probe, mapping missing/throw to N/A/DOWN respectively. */
+async function runHealthCheck(check) {
+  if (typeof check !== 'function') return 'N/A';
+  try {
+    await check();
+    return 'UP';
+  } catch (err) {
+    logger.warn('health_check_failed', { error: err.message });
+    return 'DOWN';
+  }
 }

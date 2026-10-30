@@ -145,7 +145,21 @@ describe('api-gateway', () => {
   it('expone su propio /health sin depender de los servicios', async () => {
     const res = await fetch(`${gateway.url}/health`);
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { status: 'ok', service: 'api-gateway' });
+    assert.deepEqual(await res.json(), {
+      status: 'UP',
+      service: 'api-gateway',
+      checks: { database: 'N/A', messageBroker: 'N/A' },
+    });
+  });
+
+  it('expone /metrics en formato Prometheus', async () => {
+    await fetch(`${gateway.url}/health`);
+    const res = await fetch(`${gateway.url}/metrics`);
+    assert.equal(res.status, 200);
+    const text = await res.text();
+    assert.match(text, /http_requests_total/);
+    assert.match(text, /process_cpu_seconds_total/);
+    assert.match(text, /http_request_duration_seconds/);
   });
 
   it('enruta /departamentos/* al servicio de departamentos preservando ruta y estado', async () => {

@@ -104,3 +104,23 @@ describe('Swagger UI', () => {
     assert.equal(res.status, 200);
   });
 });
+
+describe('Observabilidad (Reto 8)', () => {
+  test('GET /health expone status y checks', async () => {
+    const { app } = makeApp();
+    const res = await request(app).get('/health');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.status, 'UP');
+    assert.equal(res.body.service, 'departamentos-service');
+    assert.deepEqual(Object.keys(res.body.checks).sort(), ['database', 'messageBroker']);
+  });
+
+  test('GET /metrics expone formato Prometheus', async () => {
+    const { app } = makeApp();
+    await request(app).get('/departamentos');
+    const res = await request(app).get('/metrics');
+    assert.equal(res.status, 200);
+    assert.match(res.text, /http_requests_total/);
+    assert.match(res.text, /process_cpu_seconds_total/);
+  });
+});
