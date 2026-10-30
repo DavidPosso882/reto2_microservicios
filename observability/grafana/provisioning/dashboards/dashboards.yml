@@ -1,0 +1,22 @@
+# Reto 8 (S3, S4) — Aprovisionamiento de dashboards de Grafana.
+# Grafana escanea `/var/lib/grafana/dashboards` (montado desde
+# `observability/grafana/dashboards`) cada 30s y carga como dashboard cualquier
+# fichero *.json que encuentre en la carpeta indicada.
+#
+# El dashboard consolidado multi-servicio (S4) lo escribe T3 en esa carpeta.
+apiVersion: 1
+
+providers:
+  - name: reto8-ecosistema
+    orgId: 1
+    folder: Reto 8
+    folderUid: reto8
+    type: file
+    disableDeletion: false
+    # Los dashboards se versionan como JSON en el repo: la fuente de verdad es
+    # el fichero, no la UI (el directorio se monta read-only).
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

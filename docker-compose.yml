@@ -406,6 +406,102 @@ services:
     networks:
       - microservices-network
 
+  # ── Observabilidad (Reto 8, S3+S8): Prometheus + Grafana + Loki/Promtail + Zipkin ──
+  #
+  # DECISIÓN — conflicto del puerto 9090:
+  #   El reto pide Prometheus en el 9090, pero Jenkins (Reto 7) ya publica el
+  #   9090 del host con "9090:8080". Para no romper Jenkins, Prometheus se
+  #   publica como "9091:9090":
+  #     - contenedor: 9090  → estándar de la imagen y URL que usan Grafana y el
+  #                          propio Prometheus (http://prometheus:9090)
+  #     - host:       9091  → http://localhost:9091
+  #   El puerto de Jenkins NO se modifica.
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9091:9090"   # host 9091 → contenedor 9090 (9090 del host es de Jenkins)
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle   # permite recargar la config sin recrear el contenedor
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:9090/-/healthy || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - microservices-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"   # http://localhost:3000
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana                                    # persistencia
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro # datasources + dashboards
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro  # JSON de T3
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - microservices-network
+
+  loki:
+    image: grafana/loki:2.9.8
+    container_name: loki
+    ports:
+      - "3100:3100"   # API HTTP de Loki (push desde Promtail y queries desde Grafana)
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:3100/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - microservices-network
+
+  promtail:
+    image: grafana/promtail:2.9.8
+    container_name: promtail
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./observability/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro   # S8: descubrir contenedores y leer sus logs
+      - promtail-positions:/var/lib/promtail          # no reenvía logs ya leídos
+    depends_on:
+      - loki
+    networks:
+      - microservices-network
+
+  zipkin:
+    image: openzipkin/zipkin:3
+    container_name: zipkin
+    ports:
+      - "9411:9411"   # UI + API de ingesta (http://localhost:9411)
+    environment:
+      # Almacenamiento en memoria: suficiente para demo/CI y sin dependencias extra.
+      STORAGE_TYPE: mem
+      JAVA_OPTS: -Xms128m -Xmx512m
+    networks:
+      - microservices-network
+
 networks:
   microservices-network:
     driver: bridge
@@ -424,3 +520,7 @@ volumes:
   sonarqube_extensions:
   sonar_db_data:
   registry_data:
+  prometheus-data:
+  grafana-data:
+  loki-data:
+  promtail-positions:

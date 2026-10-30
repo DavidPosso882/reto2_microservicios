@@ -1,0 +1,50 @@
+# Reto 8 (S3, S8) — Promtail: recolector de logs de todos los contenedores.
+#
+# Usa el socket de Docker (`/var/run/docker.sock`, montado read-only) para
+# descubrir contenedores y leer sus logs por stdout/stderr: así no hace falta
+# que cada servicio escriba a un fichero ni tocar sus imágenes.
+#
+# Las etiquetas salen de los metadatos de Docker, de modo que la consulta en
+# Grafana/Loki es directa:  {container="vacaciones-service"}  o
+# {compose_service="api-gateway"}.
+#
+# T2 emite logs en JSON: cuando estén disponibles, aquí se puede añadir una
+# etapa `pipeline_stages -> json` para extraer `level`, `trace_id`, etc. como
+# etiquetas. No se activa todavía para no descartar líneas de texto plano que
+# hoy emiten los servicios (una línea no-JSON sería descartada por esa etapa).
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: info
+
+positions:
+  # Persistido en volumen para no reenviar logs ya leídos tras un reinicio.
+  filename: /var/lib/promtail/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+    # Reintentos acotados: si Loki arranca después, Promtail no se bloquea.
+    backoff_config:
+      min_period: 500ms
+      max_period: 5s
+      max_retries: 10
+
+scrape_configs:
+  - job_name: docker-containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      # Nombre del contenedor sin la barra inicial que añade Docker.
+      - source_labels: ["__meta_docker_container_name"]
+        regex: "/(.*)"
+        target_label: "container"
+      # Servicio de docker compose (api-gateway, loki, prometheus, ...).
+      - source_labels: ["__meta_docker_container_label_com_docker_compose_service"]
+        target_label: "compose_service"
+      # Proyecto/stack de compose para separar ejecuciones locales de las de CI.
+      - source_labels: ["__meta_docker_container_label_com_docker_compose_project"]
+        target_label: "compose_project"
+      # stdout vs stderr.
+      - source_labels: ["__meta_docker_container_log_stream"]
+        target_label: "stream"
