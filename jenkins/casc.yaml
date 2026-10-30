@@ -12,6 +12,11 @@ jobs:
   - script: >
       pipelineJob('empleados-service') {
         description('CI empleados-service (Java 21 + Maven). Jenkinsfile: empleados/Jenkinsfile.')
+        // Polling P5-automatización: file:///workspace no admite webhook;
+        // Jenkins revisa la rama cada ~2 min y dispara solo con cambio nuevo.
+        triggers {
+          scm('H/2 * * * *')
+        }
         definition {
           cpsScm {
             scm {
@@ -29,6 +34,11 @@ jobs:
   - script: >
       pipelineJob('vacaciones-service') {
         description('CI vacaciones-service (Ruby 3.3 + Minitest). Jenkinsfile: vacaciones/Jenkinsfile.')
+        // Polling P5-automatización: file:///workspace no admite webhook;
+        // Jenkins revisa la rama cada ~2 min y dispara solo con cambio nuevo.
+        triggers {
+          scm('H/2 * * * *')
+        }
         definition {
           cpsScm {
             scm {

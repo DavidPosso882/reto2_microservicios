@@ -8,6 +8,12 @@
 pipeline {
     agent none
 
+    // Reto 7 — automatización recomendada por cátedra: polling contra
+    // file:///workspace (no hay webhook con SCM local). Revisa la rama
+    // cada ~2 min y dispara solo si hubo commit nuevo. No paralelizar
+    // E2E entre pipelines: comparten puertos fijos (ver guía Punto 5).
+    triggers { pollSCM('H/2 * * * *') }
+
     stages {
         stage('Checkout') {
             agent any
