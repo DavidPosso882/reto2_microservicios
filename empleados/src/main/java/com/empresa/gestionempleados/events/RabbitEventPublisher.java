@@ -3,6 +3,7 @@ package com.empresa.gestionempleados.events;
 import com.empresa.gestionempleados.config.RabbitMQConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.amqp.core.AmqpTemplate;
 import org.springframework.stereotype.Component;
 
@@ -54,6 +55,15 @@ public class RabbitEventPublisher implements EventPublisher {
         envelope.put("data", data != null ? data : new LinkedHashMap<>());
 
         amqpTemplate.convertAndSend(RabbitMQConfig.EVENTOS_EXCHANGE, type, envelope);
-        log.debug("Evento '{}' publicado con id {}", type, envelope.get("id"));
+
+        // Reto 8: log JSON con ids de dominio (sin datos sensibles).
+        MDC.put("event.type", type);
+        MDC.put("event.id", String.valueOf(envelope.get("id")));
+        try {
+            log.info("evento_publicado");
+        } finally {
+            MDC.remove("event.type");
+            MDC.remove("event.id");
+        }
     }
 }

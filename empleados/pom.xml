@@ -32,6 +32,16 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
+        <!-- Reto 8: métricas Prometheus en /metrics y soporte de instrumentación -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
         <!-- Persistencia JPA (Reto 2) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
