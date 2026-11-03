@@ -101,6 +101,9 @@ pipeline {
         stage('E2E Tests') {
             // Igual que empleados (proyecto reto7-e2e aislado). No paralelizar
             // E2E entre pipelines: puertos fijos compartidos.
+            // El lock serializa esta etapa entre ambos jobs: se toma antes del agente
+            // (quien espera no ocupa ejecutor) y cubre el post con el 'down -v'.
+            options { lock('e2e-stack') }
             agent {
                 docker {
                     image 'python:3.11-slim'

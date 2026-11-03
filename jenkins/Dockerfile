@@ -13,7 +13,8 @@ RUN jenkins-plugin-cli --plugins \
     junit \
     coverage \
     cucumber-reports \
-    htmlpublisher
+    htmlpublisher \
+    lockable-resources
 
 # Cliente Docker para construir imágenes vía socket del host (Docker Socket Mount).
 USER root

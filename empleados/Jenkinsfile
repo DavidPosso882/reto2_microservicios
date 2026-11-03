@@ -119,6 +119,9 @@ pipeline {
             // Jenkins/Sonar/registry del proyecto base). '|| true' tras run_bdd:
             // es junit quien marca UNSTABLE. Los E2E no se paralelizan entre
             // pipelines: comparten puertos fijos del stack (8080) y proyecto.
+            // El lock serializa esta etapa entre ambos jobs: se toma antes del agente
+            // (quien espera no ocupa ejecutor) y cubre el post con el 'down -v'.
+            options { lock('e2e-stack') }
             agent {
                 docker {
                     image 'python:3.11-slim'
