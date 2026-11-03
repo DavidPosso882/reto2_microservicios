@@ -788,3 +788,4 @@ En `evidencias/reto7/`:
 | Reporte BDD navegable | `p5-reporte-bdd.png` | Características y escenarios en español |
 | Build fallido | `p5-build-fallido.png` | Prueba/escenario que falló identificado |
 
+# Agrega una línea al README

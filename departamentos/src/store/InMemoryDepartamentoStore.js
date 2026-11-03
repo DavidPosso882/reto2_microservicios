@@ -2,10 +2,11 @@ import { DuplicateError } from '../errors.js';
 
 /**
  * In-memory implementation of the departamento store.
- *
+ * 
  * Used by the test suite to exercise routing and validation without a live
  * PostgreSQL database. It implements the same contract as
  * `PgDepartamentoStore` so the service stays store-agnostic.
+ * PRUEBA 1
  */
 export class InMemoryDepartamentoStore {
   constructor() {
@@ -29,3 +30,4 @@ export class InMemoryDepartamentoStore {
     return Array.from(this.rows.values()).map((row) => ({ ...row }));
   }
 }
+
