@@ -13,3 +13,18 @@ services:
       start_period: 60s
   api-gateway:
     ports: []      # el gateway E2E no necesita puerto externo
+    restart: on-failure:5
+  # Bajo carga, un servicio puede morir al arrancar por un fallo transitorio
+  # (p. ej. UnknownHostException de la BD) y dejar caída toda la corrida.
+  auth-service:
+    restart: on-failure:5
+  departamentos-service:
+    restart: on-failure:5
+  empleados-service:
+    restart: on-failure:5
+  notificaciones-service:
+    restart: on-failure:5
+  perfiles-service:
+    restart: on-failure:5
+  vacaciones-service:
+    restart: on-failure:5
