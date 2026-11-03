@@ -6,5 +6,10 @@ services:
     ports: []      # sin binding al host: evita conflicto con el stack principal
     hostname: reto7-e2e-rabbit   # hostname fijo: evita conflicto de Erlang cookie entre reinicios
     image: rabbitmq:3-alpine     # imagen ligera sin management UI: menos memoria
+    healthcheck:
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
   api-gateway:
     ports: []      # el gateway E2E no necesita puerto externo

@@ -293,7 +293,9 @@ services:
     volumes:
       - vol-rabbitmq:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      # La guarda evita que el CLI (root) cree .erlang.cookie antes que el servidor:
+      # con la cookie de root, RabbitMQ muere con eacces si arranca lento.
+      test: ["CMD-SHELL", "test -s /var/lib/rabbitmq/.erlang.cookie && rabbitmq-diagnostics -q ping"]
       interval: 10s
       timeout: 5s
       retries: 10
