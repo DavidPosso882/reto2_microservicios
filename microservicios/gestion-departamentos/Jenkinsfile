@@ -31,7 +31,7 @@ pipeline {
             }
             steps {
                 dir('microservicios/gestion-departamentos') {
-                    sh 'npm ci --no-audit --no-fund'
+                    sh 'npm ci --no-audit --no-fund --cache .npm-cache-tmp'
                 }
             }
         }
