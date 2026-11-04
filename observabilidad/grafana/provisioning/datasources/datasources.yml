@@ -1,0 +1,49 @@
+# Reto 8 (S3) — Datasources de Grafana aprovisionados como código.
+# Grafana los carga al arrancar desde /etc/grafana/provisioning/datasources:
+# no hay que configurar nada a mano en la UI.
+apiVersion: 1
+
+datasources:
+  # Métricas: Prometheus habla con el Prometheus del ecosistema por nombre de
+  # servicio de la red Docker. Dentro del contenedor Prometheus escucha en 9090
+  # (su 9090 sólo está mapeado al 9091 del host, eso no afecta a la red interna).
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s      # mismo scrape_interval que prometheus.yml
+      # Enlace directo de cada métrica al contenedor dueño del target.
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: zipkin
+
+  # Logs: Loki recibe de Promtail los logs de todos los contenedores.
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      maxLines: 1000
+
+  # Trazas: Zipkin (S2, instrumentación OpenTelemetry en T2).
+  - name: Zipkin
+    uid: zipkin
+    type: zipkin
+    access: proxy
+    url: http://zipkin:9411
+    editable: false
+    jsonData:
+      # Salto traza -> logs: al abrir un span, Grafana busca en Loki las líneas
+      # cercanas en el tiempo con el mismo trace_id (T2 emite trace_id en JSON).
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-1m"
+        spanEndTimeShift: "1m"
+        filterByTraceID: true

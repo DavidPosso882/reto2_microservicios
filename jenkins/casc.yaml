@@ -1,0 +1,176 @@
+# Reto 7 P2 — Aprovisionamiento de pipelines como código (Opción A: JCasC + job-dsl).
+# Al levantar Jenkins con `docker compose up`, estos jobs ya existen: cada uno
+# lee su Jenkinsfile versionado junto al código (microservicios/gestion-empleados/Jenkinsfile,
+# microservicios/gestion-vacaciones/Jenkinsfile) del repo montado en /workspace, rama del reto.
+# Decisión: JCasC frente a init.groovy.d porque es declarativo, se revisa como
+# YAML y el plugin configuration-as-code ya viene pre-instalado (P1).
+jenkins:
+  systemMessage: "Proyecto Final — CI del ecosistema (jobs aprovisionados como código)"
+  numExecutors: 2
+
+jobs:
+  - script: >
+      pipelineJob('empleados-service') {
+        description('CI empleados-service (Java 21 + Maven). Jenkinsfile: microservicios/gestion-empleados/Jenkinsfile.')
+        // Polling P5-automatización: file:///workspace no admite webhook;
+        // Jenkins revisa la rama cada ~2 min y dispara solo con cambio nuevo.
+        triggers {
+          scm('H/2 * * * *')
+        }
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('file:///workspace')
+                }
+                branches('*/main')
+              }
+            }
+            scriptPath('microservicios/gestion-empleados/Jenkinsfile')
+          }
+        }
+      }
+  - script: >
+      pipelineJob('vacaciones-service') {
+        description('CI vacaciones-service (Ruby 3.3 + Minitest). Jenkinsfile: microservicios/gestion-vacaciones/Jenkinsfile.')
+        // Polling P5-automatización: file:///workspace no admite webhook;
+        // Jenkins revisa la rama cada ~2 min y dispara solo con cambio nuevo.
+        triggers {
+          scm('H/2 * * * *')
+        }
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('file:///workspace')
+                }
+                branches('*/main')
+              }
+            }
+            scriptPath('microservicios/gestion-vacaciones/Jenkinsfile')
+          }
+        }
+      }
+  - script: >
+      pipelineJob('departamentos-service') {
+        description('CI departamentos-service (Node 22 + node:test). Jenkinsfile: microservicios/gestion-departamentos/Jenkinsfile.')
+        triggers {
+          scm('H/2 * * * *')
+        }
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('file:///workspace')
+                }
+                branches('*/main')
+              }
+            }
+            scriptPath('microservicios/gestion-departamentos/Jenkinsfile')
+          }
+        }
+      }
+  - script: >
+      pipelineJob('auth-service') {
+        description('CI auth-service (Node 22 + node:test). Jenkinsfile: microservicios/autenticacion/Jenkinsfile.')
+        triggers {
+          scm('H/2 * * * *')
+        }
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('file:///workspace')
+                }
+                branches('*/main')
+              }
+            }
+            scriptPath('microservicios/autenticacion/Jenkinsfile')
+          }
+        }
+      }
+  - script: >
+      pipelineJob('perfiles-service') {
+        description('CI perfiles-service (Go 1.26 + go test). Jenkinsfile: microservicios/gestion-perfiles/Jenkinsfile.')
+        triggers {
+          scm('H/2 * * * *')
+        }
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('file:///workspace')
+                }
+                branches('*/main')
+              }
+            }
+            scriptPath('microservicios/gestion-perfiles/Jenkinsfile')
+          }
+        }
+      }
+  - script: >
+      pipelineJob('notificaciones-service') {
+        description('CI notificaciones-service (Python 3.12 + pytest). Jenkinsfile: microservicios/notificaciones/Jenkinsfile.')
+        triggers {
+          scm('H/2 * * * *')
+        }
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('file:///workspace')
+                }
+                branches('*/main')
+              }
+            }
+            scriptPath('microservicios/notificaciones/Jenkinsfile')
+          }
+        }
+      }
+  - script: >
+      pipelineJob('api-gateway') {
+        description('CI api-gateway (Node 22 + node:test). Jenkinsfile: microservicios/api-gateway/Jenkinsfile.')
+        triggers {
+          scm('H/2 * * * *')
+        }
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('file:///workspace')
+                }
+                branches('*/main')
+              }
+            }
+            scriptPath('microservicios/api-gateway/Jenkinsfile')
+          }
+        }
+      }
+
+# Reto 7 P3 — Token de SonarQube como credencial Jenkins (el valor llega por
+# entorno SONAR_TOKEN desde .env, nunca queda en git) y servidor SonarQube
+# para el paso waitForQualityGate (resoluble desde el controller).
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - string:
+              scope: GLOBAL
+              id: "sonar-token"
+              secret: "${SONAR_TOKEN}"
+              description: "Token SonarQube para el análisis CI"
+          - string:
+              scope: GLOBAL
+              id: "jwt-secret"
+              secret: "${JWT_SECRET}"
+              description: "JWT para los stacks E2E desechables (nunca en git)"
+
+# (El servidor SonarQube para waitForQualityGate se configura por script
+# init.groovy.d — el plugin sonar de esta versión no expone raíz CasC.)

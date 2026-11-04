@@ -1,0 +1,9 @@
+# Entorno virtual local del proyecto E2E (no se versiona)
+.venv/
+
+# Reportes generados por behave (redundante con el .gitignore raíz, documenta el contrato)
+reports/
+
+# Bytecode de Python
+__pycache__/
+*.pyc

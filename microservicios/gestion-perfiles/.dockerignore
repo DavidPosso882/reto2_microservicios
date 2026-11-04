@@ -1,0 +1,12 @@
+# Control de versión y editor
+.git
+.gitignore
+*.swp
+
+# Artefactos locales
+*.log
+tmp/
+perfiles-service
+
+# Tests no son necesarios dentro de la imagen
+coverage.out

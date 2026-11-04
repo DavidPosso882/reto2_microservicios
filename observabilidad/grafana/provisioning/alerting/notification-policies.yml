@@ -1,0 +1,31 @@
+# Reto 8 (S5) — Política de notificación por defecto.
+#
+# Sin este fichero, Grafana Alerting enruta al contact point por defecto
+# (`grafana-default-email`, que no existe en este stack) y las alertas se
+# quedarían sólo en la UI. Con esta política TODA alerta del ecosistema va al
+# bot de Telegram.
+#
+# El agrupado por `alertname` + `job` evita una ráfaga de mensajes cuando se cae
+# más de un servicio a la vez; `repeat_interval: 4h` recuerda la alerta sin
+# spamear.
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    receiver: reto8-telegram
+    group_by:
+      - alertname
+      - job
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+    # Ruta explícita para las alertas etiquetadas con canal=telegram (las dos
+    # reglas de alert-rules.yml). El receiver de la política ya es Telegram, así
+    # que la ruta sólo sirve para dejar el enrutamiento visible y ampliable.
+    routes:
+      - receiver: reto8-telegram
+        object_matchers:
+          - ["canal", "=", "telegram"]
+        group_wait: 10s
+        group_interval: 5m
+        repeat_interval: 4h

@@ -1,0 +1,64 @@
+# Documentación del proyecto (se versiona: README, docs/, catálogos)
+*.pdf
+*.docx
+!README.md
+!**/README.md
+!docs/**/*.md
+!CATALOGO_EVENTOS.md
+
+# Variables de entorno y secretos (nunca se versionan valores reales)
+.env
+.env.*
+!*.example
+secrets/
+
+# Node.js (Microservicio Departamentos)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Java / Maven (Microservicio Empleados)
+target/
+*.class
+*.jar
+*.war
+*.ear
+
+# IDEs y editores
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+
+# Archivos de sistema operativo
+.DS_Store
+Thumbs.db
+# Local Pi runtime state
+.atl/
+.pi/
+__pycache__/
+*.pyc
+.pytest_cache/
+# Reto 6: reportes generados (contrato Reto 7, no se versionan)
+reports/
+coverage/
+coverage.out
+# Generado local con secretos (ver scripts/grafana-set-telegram.py)
+observabilidad/grafana/provisioning/alerting/contact-points.yml
+coverage.xml
+coverage.json
+junit.xml
+cucumber.json
+cucumber.html
+
+# Coleccion Bruno: vista complementaria local, no se versiona
+pruebas_bruno/
+
+# Cache del binario standalone de compose (lo baja scripts/fetch-compose.py)
+.ci-tools/

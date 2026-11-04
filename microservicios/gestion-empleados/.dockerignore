@@ -1,0 +1,18 @@
+# Directorio de target generado por Maven
+target/
+
+# Archivos de IDE
+.idea/
+*.iml
+.vscode/
+*.classpath
+*.project
+.settings/
+
+# Git
+.git/
+.gitignore
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db

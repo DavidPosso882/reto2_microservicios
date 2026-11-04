@@ -1,0 +1,152 @@
+// Reto 7 — CI de vacaciones-service (Ruby 3.3 + Minitest, stdlib).
+// Etapas: Checkout -> Build -> Test -> SonarQube -> Package -> E2E Tests.
+// Top-level 'agent none' con agente propio por etapa (los agentes docker no
+// se anidan: ver empleados/Jenkinsfile). Misma convención: fallos -> UNSTABLE.
+pipeline {
+    agent none
+
+    // Reto 7 — automatización recomendada por cátedra: polling contra
+    // file:///workspace (no hay webhook con SCM local). Revisa la rama
+    // cada ~2 min y dispara solo si hubo commit nuevo. No paralelizar
+    // E2E entre pipelines: comparten puertos fijos (ver guía Punto 5).
+    triggers { pollSCM('H/2 * * * *') }
+
+    stages {
+        stage('Checkout') {
+            agent any
+            steps {
+                echo 'Código fuente obtenido del SCM configurado en el job'
+            }
+        }
+
+        stage('Build') {
+            agent {
+                docker {
+                    image 'ruby:3.3-slim'
+                    args '-v jenkins-ruby:/usr/local/bundle'
+                }
+            }
+            steps {
+                dir('microservicios/gestion-vacaciones') {
+                    // Sin dependencias externas: basta verificar el intérprete.
+                    // run_all.rb usa solo stdlib (sin bundle install).
+                    sh 'ruby -v'
+                }
+            }
+        }
+
+        stage('Test') {
+            agent {
+                docker {
+                    image 'ruby:3.3-slim'
+                    args '-v jenkins-ruby:/usr/local/bundle'
+                }
+            }
+            steps {
+                dir('microservicios/gestion-vacaciones') {
+                    // El '|| true' deja que el pipeline llegue al bloque post y
+                    // publique el reporte; es el paso junit quien marca UNSTABLE.
+                    sh 'ruby tests/run_all.rb || true'
+                }
+            }
+            post {
+                always {
+                    junit 'microservicios/gestion-vacaciones/reports/junit.xml'
+                    recordCoverage(
+                        tools: [[parser: 'COBERTURA', pattern: 'microservicios/gestion-vacaciones/reports/coverage/coverage.xml']],
+                        sourceCodeRetention: 'EVERY_BUILD'
+                    )
+                }
+            }
+        }
+
+        stage('SonarQube') {
+            // Scanner CLI 5.0.1 (pin: compatible con SonarQube 9.9).
+            // Host network para llegar a localhost:9000; login Basic (SQ 9.9
+            // rechaza Bearer). La cobertura la generó Test (Cobertura XML).
+            agent {
+                docker {
+                    image 'sonarsource/sonar-scanner-cli:5.0.1'
+                    args '--network host'
+                }
+            }
+            steps {
+                dir('microservicios/gestion-vacaciones') {
+                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SQ_TOKEN')]) {
+                        sh 'sonar-scanner -Dsonar.login=${SQ_TOKEN} -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300'
+                    }
+                }
+            }
+        }
+
+        stage('Package') {
+            agent {
+                docker {
+                    image 'python:3.11-slim'
+                    // HOME=/tmp: compose crea ~/.docker (uid 1000 sin HOME).
+                    args '-e HOME=/tmp -v /var/run/docker.sock:/var/run/docker.sock --group-add 983 --network host'
+                }
+            }
+            steps {
+                sh 'python3 scripts/fetch-compose.py'
+                // JWT por credencial jwt-secret (ver empleados/Jenkinsfile).
+                withCredentials([string(credentialsId: 'jwt-secret', variable: 'JWT_CI')]) {
+                    sh 'export JWT_SECRET=$JWT_CI; TAG=${BUILD_NUMBER} scripts/ci-compose.sh -r build vacaciones-service'
+                    sh 'export JWT_SECRET=$JWT_CI; TAG=${BUILD_NUMBER} scripts/ci-compose.sh -r push vacaciones-service'
+                    sh 'export JWT_SECRET=$JWT_CI; TAG=latest scripts/ci-compose.sh -r build vacaciones-service'
+                    sh 'export JWT_SECRET=$JWT_CI; TAG=latest scripts/ci-compose.sh -r push vacaciones-service'
+                }
+            }
+        }
+
+        stage('E2E Tests') {
+            // Igual que empleados (proyecto reto7-e2e aislado). No paralelizar
+            // E2E entre pipelines: puertos fijos compartidos.
+            agent {
+                docker {
+                    image 'python:3.11-slim'
+                    args '-e HOME=/tmp -v /var/run/docker.sock:/var/run/docker.sock --group-add 983 --network host'
+                }
+            }
+            steps {
+                sh 'python3 scripts/fetch-compose.py'
+                withCredentials([string(credentialsId: 'jwt-secret', variable: 'JWT_CI')]) {
+                    sh 'export JWT_SECRET=$JWT_CI; scripts/ci-compose.sh up -d --build api-gateway'
+                }
+                sh 'BASE_URL=http://localhost:8080 python3 scripts/wait-for-e2e-ready.py'
+                sh 'cd e2e-tests && ([ -x .venv/bin/behave ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt)) && BASE_URL=http://localhost:8080 ./run_bdd.sh || true'
+            }
+            post {
+                always {
+                    junit 'e2e-tests/reports/TESTS-*.xml'
+                    // Sin paso cucumber(): el JSON de behave no lo digiere el
+                    // plugin cucumber-reports ("Missing report result" aun con
+                    // 18/18 passed, marca UNSTABLE en verde). La guia ofrece
+                    // publishHTML como alternativa generica y junit sigue
+                    // siendo el gate (escenarios fallidos -> UNSTABLE).
+                    publishHTML(target: [reportDir: 'e2e-tests/reports', reportFiles: 'cucumber.html', reportName: 'Reporte BDD', keepAll: true, alwaysLinkToLastBuild: true])
+                    withCredentials([string(credentialsId: 'jwt-secret', variable: 'JWT_CI')]) {
+                        sh 'export JWT_SECRET=$JWT_CI; scripts/ci-compose.sh logs --no-color > docker-logs.txt || true'
+                        sh 'export JWT_SECRET=$JWT_CI; scripts/ci-compose.sh down -v || true'
+                    }
+                    archiveArtifacts artifacts: 'docker-logs.txt', allowEmptyArchive: true
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Pipeline finalizado'
+        }
+        success {
+            echo 'Build y tests exitosos'
+        }
+        unstable {
+            echo 'El build compiló pero hay pruebas fallando'
+        }
+        failure {
+            echo 'El pipeline ha fallado'
+        }
+    }
+}

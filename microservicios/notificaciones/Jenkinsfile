@@ -1,0 +1,155 @@
+// Proyecto Final — CI de notificaciones-service (Python 3.12 + pytest).
+// Etapas: Checkout -> Build -> Test -> SonarQube -> Package -> E2E Tests.
+// Top-level 'agent none' con agente propio por etapa (los agentes docker no se
+// anidan: ver gestion-empleados/Jenkinsfile). Convención del ecosistema:
+// pruebas fallidas -> UNSTABLE (lo marca junit); cobertura <70% o QG rojo -> FAILURE.
+pipeline {
+    agent none
+
+    // Polling contra file:///workspace (sin webhook con SCM local). Revisa la
+    // rama cada ~2 min y dispara solo si hubo commit nuevo. No paralelizar
+    // E2E entre pipelines: comparten puertos fijos (ver guía Punto 5).
+    triggers { pollSCM('H/2 * * * *') }
+
+    stages {
+        stage('Checkout') {
+            agent any
+            steps {
+                echo 'Código fuente obtenido del SCM configurado en el job'
+            }
+        }
+
+        stage('Build') {
+            agent {
+                docker {
+                    // Misma toolchain que el Dockerfile del servicio.
+                    image 'python:3.12-slim'
+                    args '-v jenkins-pip:/root/.cache/pip'
+                }
+            }
+            steps {
+                dir('microservicios/notificaciones') {
+                    // pytest-cov no está en requirements (es infra de CI):
+                    // se instala aquí para no contaminar la imagen de prod.
+                    sh 'pip install -q -r requirements.txt pytest-cov && python -c "import app.main"'
+                }
+            }
+        }
+
+        stage('Test') {
+            agent {
+                docker {
+                    image 'python:3.12-slim'
+                    args '-v jenkins-pip:/root/.cache/pip'
+                }
+            }
+            steps {
+                dir('microservicios/notificaciones') {
+                    // --cov-fail-under=70: gate de cobertura en la etapa.
+                    // El '|| true' deja que surefire... (junit) marque UNSTABLE
+                    // en fallos; la cobertura la vigila además el QG (FAILURE).
+                    sh 'mkdir -p reports && pytest tests/ --junitxml=reports/junit.xml --cov=app --cov-report=xml:reports/coverage.xml --cov-fail-under=70 || true'
+                }
+            }
+            post {
+                always {
+                    junit 'microservicios/notificaciones/reports/junit.xml'
+                    recordCoverage(
+                        tools: [[parser: 'COBERTURA', pattern: 'microservicios/notificaciones/reports/coverage.xml']],
+                        sourceCodeRetention: 'EVERY_BUILD'
+                    )
+                }
+            }
+        }
+
+        stage('SonarQube') {
+            // Scanner CLI 5.0.1 (pin: compatible con SonarQube 9.9).
+            // Host network para llegar a localhost:9000; login Basic (SQ 9.9
+            // rechaza Bearer). La cobertura la generó Test (Cobertura XML).
+            agent {
+                docker {
+                    image 'sonarsource/sonar-scanner-cli:5.0.1'
+                    args '--network host'
+                }
+            }
+            steps {
+                dir('microservicios/notificaciones') {
+                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SQ_TOKEN')]) {
+                        sh 'sonar-scanner -Dsonar.login=${SQ_TOKEN} -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300'
+                    }
+                }
+            }
+        }
+
+        stage('Package') {
+            // Agente python: binario standalone de compose (fetch-compose.py,
+            // cacheado en el workspace) + build/push al registry local con el
+            // tag del build y :latest (docker-compose.registry.yml).
+            agent {
+                docker {
+                    image 'python:3.11-slim'
+                    // HOME=/tmp: compose crea ~/.docker (uid 1000 sin HOME).
+                    args '-e HOME=/tmp -v /var/run/docker.sock:/var/run/docker.sock --group-add 983 --network host'
+                }
+            }
+            steps {
+                sh 'python3 scripts/fetch-compose.py'
+                // JWT por credencial jwt-secret (el clone no trae .env). Se
+                // re-exporta con otro nombre porque JWT_SECRET colisiona con el
+                // env del controller (llegaba vacío).
+                withCredentials([string(credentialsId: 'jwt-secret', variable: 'JWT_CI')]) {
+                    sh 'export JWT_SECRET=$JWT_CI; TAG=${BUILD_NUMBER} scripts/ci-compose.sh -r build notificaciones-service'
+                    sh 'export JWT_SECRET=$JWT_CI; TAG=${BUILD_NUMBER} scripts/ci-compose.sh -r push notificaciones-service'
+                    sh 'export JWT_SECRET=$JWT_CI; TAG=latest scripts/ci-compose.sh -r build notificaciones-service'
+                    sh 'export JWT_SECRET=$JWT_CI; TAG=latest scripts/ci-compose.sh -r push notificaciones-service'
+                }
+            }
+        }
+
+        stage('E2E Tests') {
+            // Stack de app en proyecto compose aislado (proyecto-e2e: no toca
+            // Jenkins/Sonar/registry del proyecto base). '|| true' tras run_bdd:
+            // es junit quien marca UNSTABLE. No paralelizar E2E entre pipelines.
+            agent {
+                docker {
+                    image 'python:3.11-slim'
+                    args '-e HOME=/tmp -v /var/run/docker.sock:/var/run/docker.sock --group-add 983 --network host'
+                }
+            }
+            steps {
+                sh 'python3 scripts/fetch-compose.py'
+                withCredentials([string(credentialsId: 'jwt-secret', variable: 'JWT_CI')]) {
+                    sh 'export JWT_SECRET=$JWT_CI; scripts/ci-compose.sh up -d --build api-gateway'
+                }
+                sh 'BASE_URL=http://localhost:8080 python3 scripts/wait-for-e2e-ready.py'
+                sh 'cd e2e-tests && ([ -x .venv/bin/behave ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt)) && BASE_URL=http://localhost:8080 ./run_bdd.sh || true'
+            }
+            post {
+                always {
+                    junit 'e2e-tests/reports/TESTS-*.xml'
+                    publishHTML(target: [reportDir: 'e2e-tests/reports', reportFiles: 'cucumber.html', reportName: 'Reporte BDD', keepAll: true, alwaysLinkToLastBuild: true])
+                    withCredentials([string(credentialsId: 'jwt-secret', variable: 'JWT_CI')]) {
+                        sh 'export JWT_SECRET=$JWT_CI; scripts/ci-compose.sh logs --no-color > docker-logs.txt || true'
+                        sh 'export JWT_SECRET=$JWT_CI; scripts/ci-compose.sh down -v || true'
+                    }
+                    archiveArtifacts artifacts: 'docker-logs.txt', allowEmptyArchive: true
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Pipeline finalizado'
+        }
+        success {
+            echo 'Build y tests exitosos'
+        }
+        unstable {
+            echo 'El build compiló pero hay pruebas fallando'
+        }
+        failure {
+            echo 'El pipeline ha fallado'
+        }
+    }
+}

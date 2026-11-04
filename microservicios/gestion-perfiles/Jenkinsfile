@@ -1,0 +1,165 @@
+// Proyecto Final — CI de perfiles-service (Go 1.26 + go test, sin dependencias extra).
+// Etapas: Checkout -> Build -> Test -> SonarQube -> Package -> E2E Tests.
+// Top-level 'agent none' con agente propio por etapa (los agentes docker no se
+// anidan: ver gestion-empleados/Jenkinsfile). Convención del ecosistema:
+// - Go no emite JUnit sin dependencias externas: el exit code es el gate
+//   (tests rojos o cobertura <70% = FAILURE directo, sin UNSTABLE intermedio).
+// - Package/E2E solo corren en verde. E2E no se paraleliza entre pipelines
+//   (puertos fijos compartidos del stack, ver guía Punto 5).
+pipeline {
+    agent none
+
+    // Polling contra file:///workspace (sin webhook con SCM local). Revisa la
+    // rama cada ~2 min y dispara solo si hubo commit nuevo.
+    triggers { pollSCM('H/2 * * * *') }
+
+    stages {
+        stage('Checkout') {
+            agent any
+            steps {
+                echo 'Código fuente obtenido del SCM configurado en el job'
+            }
+        }
+
+        stage('Build') {
+            agent {
+                docker {
+                    // Misma toolchain que la etapa build del Dockerfile.
+                    image 'golang:1.26-alpine'
+                    args '-v jenkins-go:/go'
+                }
+            }
+            steps {
+                dir('microservicios/gestion-perfiles') {
+                    sh 'go build ./...'
+                }
+            }
+        }
+
+        stage('Test') {
+            agent {
+                docker {
+                    image 'golang:1.26-alpine'
+                    args '-v jenkins-go:/go'
+                }
+            }
+            steps {
+                dir('microservicios/gestion-perfiles') {
+                    // coverprofile para Sonar (sonar.go.coverage.reportPaths).
+                    // Alcance unitario: cmd/ (wiring del main) y store/postgres
+                    // (necesita PG vivo) quedan fuera del gate; los cubre el
+                    // BDD contra el stack desplegado (ver docs/arquitectura.md).
+                    // Sin '|| true': fallos o cobertura <70% = FAILURE.
+                    sh 'go test -coverprofile=coverage.out ./...'
+                    // Gate 70% sobre el alcance unitario (statements).
+                    // Fail-closed: si no se puede medir, el gate falla.
+                    sh '''
+                        set +e
+                        { head -n 1 coverage.out; grep -v "cmd/perfiles-service\\|store/postgres" coverage.out | grep -v "^mode:"; } > coverage.unit.out
+                        LINE=$(go tool cover -func=coverage.unit.out 2>/dev/null | tail -1)
+                        TOTAL=$(echo "$LINE" | grep -o '[0-9.]*%' | head -1 | tr -d '%')
+                        INT=${TOTAL%.*}
+                        [ -z "$INT" ] && INT=0
+                        echo "Cobertura unitaria: ${TOTAL:-?}% (mínimo 70%)"
+                        test "$INT" -ge 70
+                    '''
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'microservicios/gestion-perfiles/coverage.out', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('SonarQube') {
+            // Scanner CLI 5.0.1 (pin: compatible con SonarQube 9.9).
+            // Host network para llegar a localhost:9000; login Basic (SQ 9.9
+            // rechaza Bearer). sonar.qualitygate.wait: falla si el QG no pasa.
+            agent {
+                docker {
+                    image 'sonarsource/sonar-scanner-cli:5.0.1'
+                    args '--network host'
+                }
+            }
+            steps {
+                dir('microservicios/gestion-perfiles') {
+                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SQ_TOKEN')]) {
+                        sh 'sonar-scanner -Dsonar.login=${SQ_TOKEN} -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300'
+                    }
+                }
+            }
+        }
+
+        stage('Package') {
+            // Agente python: binario standalone de compose (fetch-compose.py,
+            // cacheado en el workspace) + build/push al registry local con el
+            // tag del build y :latest (docker-compose.registry.yml).
+            agent {
+                docker {
+                    image 'python:3.11-slim'
+                    // HOME=/tmp: compose crea ~/.docker (uid 1000 sin HOME).
+                    args '-e HOME=/tmp -v /var/run/docker.sock:/var/run/docker.sock --group-add 983 --network host'
+                }
+            }
+            steps {
+                sh 'python3 scripts/fetch-compose.py'
+                // JWT por credencial jwt-secret (el clone no trae .env). Se
+                // re-exporta con otro nombre porque JWT_SECRET colisiona con el
+                // env del controller (llegaba vacío).
+                withCredentials([string(credentialsId: 'jwt-secret', variable: 'JWT_CI')]) {
+                    sh 'export JWT_SECRET=$JWT_CI; TAG=${BUILD_NUMBER} scripts/ci-compose.sh -r build perfiles-service'
+                    sh 'export JWT_SECRET=$JWT_CI; TAG=${BUILD_NUMBER} scripts/ci-compose.sh -r push perfiles-service'
+                    sh 'export JWT_SECRET=$JWT_CI; TAG=latest scripts/ci-compose.sh -r build perfiles-service'
+                    sh 'export JWT_SECRET=$JWT_CI; TAG=latest scripts/ci-compose.sh -r push perfiles-service'
+                }
+            }
+        }
+
+        stage('E2E Tests') {
+            // Stack de app en proyecto compose aislado (proyecto-e2e: no toca
+            // Jenkins/Sonar/registry del proyecto base). '|| true' tras run_bdd:
+            // es junit quien marca UNSTABLE. No paralelizar E2E entre pipelines.
+            agent {
+                docker {
+                    image 'python:3.11-slim'
+                    args '-e HOME=/tmp -v /var/run/docker.sock:/var/run/docker.sock --group-add 983 --network host'
+                }
+            }
+            steps {
+                sh 'python3 scripts/fetch-compose.py'
+                withCredentials([string(credentialsId: 'jwt-secret', variable: 'JWT_CI')]) {
+                    sh 'export JWT_SECRET=$JWT_CI; scripts/ci-compose.sh up -d --build api-gateway'
+                }
+                sh 'BASE_URL=http://localhost:8080 python3 scripts/wait-for-e2e-ready.py'
+                sh 'cd e2e-tests && ([ -x .venv/bin/behave ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt)) && BASE_URL=http://localhost:8080 ./run_bdd.sh || true'
+            }
+            post {
+                always {
+                    junit 'e2e-tests/reports/TESTS-*.xml'
+                    publishHTML(target: [reportDir: 'e2e-tests/reports', reportFiles: 'cucumber.html', reportName: 'Reporte BDD', keepAll: true, alwaysLinkToLastBuild: true])
+                    withCredentials([string(credentialsId: 'jwt-secret', variable: 'JWT_CI')]) {
+                        sh 'export JWT_SECRET=$JWT_CI; scripts/ci-compose.sh logs --no-color > docker-logs.txt || true'
+                        sh 'export JWT_SECRET=$JWT_CI; scripts/ci-compose.sh down -v || true'
+                    }
+                    archiveArtifacts artifacts: 'docker-logs.txt', allowEmptyArchive: true
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Pipeline finalizado'
+        }
+        success {
+            echo 'Build y tests exitosos'
+        }
+        unstable {
+            echo 'El build compiló pero hay pruebas fallando'
+        }
+        failure {
+            echo 'El pipeline ha fallado'
+        }
+    }
+}

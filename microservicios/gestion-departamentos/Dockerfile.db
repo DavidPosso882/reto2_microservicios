@@ -1,0 +1,6 @@
+# Reto 7 P4 — Imagen DB con schema horneado.
+# El init.sql viaja en el contexto de build (tar al daemon), no como bind-mount,
+# así funciona con Docker-out-of-Docker desde Jenkins (el socket del host no ve
+# el workspace del contenedor). Portable entre máquinas.
+FROM postgres:16-alpine
+COPY init.sql /docker-entrypoint-initdb.d/01-init.sql

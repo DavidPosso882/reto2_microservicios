@@ -1,0 +1,529 @@
+services:
+  database-auth:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_AUTH_NAME:-auth_db}
+      POSTGRES_USER: ${DB_AUTH_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_AUTH_PASSWORD:-postgres}
+    volumes:
+      - vol-auth:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_AUTH_USER:-postgres} -d ${DB_AUTH_NAME:-auth_db}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - microservices-network
+
+  auth-service:
+    build: ./microservicios/autenticacion
+    expose:
+      - "8086"   # visible solo dentro de la red de Docker (Reto 3: borde único)
+    environment:
+      PORT: 8086
+      DB_HOST: database-auth
+      DB_PORT: 5432
+      DB_NAME: ${DB_AUTH_NAME:-auth_db}
+      DB_USER: ${DB_AUTH_USER:-postgres}
+      DB_PASSWORD: ${DB_AUTH_PASSWORD:-postgres}
+      # Firmado de JWT: el gateway valida con la MISMA clave (Reto 5).
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin}
+    depends_on:
+      database-auth:
+        condition: service_healthy
+      message-broker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8086/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - microservices-network
+
+  database-empleados:
+    build:
+      context: ./microservicios/gestion-empleados
+      dockerfile: Dockerfile.db
+    environment:
+      POSTGRES_DB: ${DB_EMPLEADOS_NAME:-gestion_empleados}
+      POSTGRES_USER: ${DB_EMPLEADOS_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_EMPLEADOS_PASSWORD:-postgres}
+    volumes:
+      - vol-empleados:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_EMPLEADOS_USER:-postgres} -d ${DB_EMPLEADOS_NAME:-gestion_empleados}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - microservices-network
+
+  database-departamentos:
+    build:
+      context: ./microservicios/gestion-departamentos
+      dockerfile: Dockerfile.db
+    environment:
+      POSTGRES_DB: ${DB_DEPARTAMENTOS_NAME:-departamentos}
+      POSTGRES_USER: ${DB_DEPARTAMENTOS_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_DEPARTAMENTOS_PASSWORD:-postgres}
+    volumes:
+      - vol-departamentos:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_DEPARTAMENTOS_USER:-postgres} -d ${DB_DEPARTAMENTOS_NAME:-departamentos}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - microservices-network
+
+  departamentos-service:
+    build: ./microservicios/gestion-departamentos
+    expose:
+      - "8082"   # visible solo dentro de la red de Docker (Reto 3: borde único)
+    environment:
+      PORT: 8082
+      DB_HOST: database-departamentos
+      DB_PORT: 5432
+      DB_NAME: ${DB_DEPARTAMENTOS_NAME:-departamentos}
+      DB_USER: ${DB_DEPARTAMENTOS_USER:-postgres}
+      DB_PASSWORD: ${DB_DEPARTAMENTOS_PASSWORD:-postgres}
+    depends_on:
+      database-departamentos:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8082/departamentos"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - microservices-network
+
+  empleados-service:
+    build: ./microservicios/gestion-empleados
+    expose:
+      - "8081"   # visible solo dentro de la red de Docker (Reto 3: borde único)
+    environment:
+      PORT: 8081
+      DB_HOST: database-empleados
+      DB_PORT: 5432
+      DB_NAME: ${DB_EMPLEADOS_NAME:-gestion_empleados}
+      DB_USER: ${DB_EMPLEADOS_USER:-postgres}
+      DB_PASSWORD: ${DB_EMPLEADOS_PASSWORD:-postgres}
+      DEPARTAMENTOS_URL: http://departamentos-service:8082
+      SPRING_RABBITMQ_HOST: message-broker
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-admin}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin}
+    depends_on:
+      database-empleados:
+        condition: service_healthy
+      departamentos-service:
+        condition: service_started
+      message-broker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/empleados"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    networks:
+      - microservices-network
+
+  database-notificaciones:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_NOTIFICACIONES_NAME:-notificaciones}
+      POSTGRES_USER: ${DB_NOTIFICACIONES_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_NOTIFICACIONES_PASSWORD:-postgres}
+    volumes:
+      - vol-notificaciones:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_NOTIFICACIONES_USER:-postgres} -d ${DB_NOTIFICACIONES_NAME:-notificaciones}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - microservices-network
+
+  notificaciones-service:
+    build: ./microservicios/notificaciones
+    expose:
+      - "8084"   # visible solo dentro de la red de Docker (Reto 3: borde único)
+    environment:
+      PORT: 8084
+      DB_HOST: database-notificaciones
+      DB_PORT: 5432
+      DB_NAME: ${DB_NOTIFICACIONES_NAME:-notificaciones}
+      DB_USER: ${DB_NOTIFICACIONES_USER:-postgres}
+      DB_PASSWORD: ${DB_NOTIFICACIONES_PASSWORD:-postgres}
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin}
+    depends_on:
+      database-notificaciones:
+        condition: service_healthy
+      message-broker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8084/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - microservices-network
+
+  database-perfiles:
+    build:
+      context: ./microservicios/gestion-perfiles
+      dockerfile: Dockerfile.db
+    environment:
+      POSTGRES_DB: ${DB_PERFILES_NAME:-perfiles}
+      POSTGRES_USER: ${DB_PERFILES_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PERFILES_PASSWORD:-postgres}
+    volumes:
+      - vol-perfiles:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_PERFILES_USER:-postgres} -d ${DB_PERFILES_NAME:-perfiles}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - microservices-network
+
+  perfiles-service:
+    build: ./microservicios/gestion-perfiles
+    expose:
+      - "8083"   # visible solo dentro de la red de Docker (Reto 3: borde único)
+    environment:
+      PORT: 8083
+      DB_HOST: database-perfiles
+      DB_PORT: 5432
+      DB_NAME: ${DB_PERFILES_NAME:-perfiles}
+      DB_USER: ${DB_PERFILES_USER:-postgres}
+      DB_PASSWORD: ${DB_PERFILES_PASSWORD:-postgres}
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin}
+    depends_on:
+      database-perfiles:
+        condition: service_healthy
+      message-broker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8083/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - microservices-network
+
+  database-vacaciones:
+    build:
+      context: ./microservicios/gestion-vacaciones
+      dockerfile: Dockerfile.db
+    environment:
+      POSTGRES_DB: ${DB_VACACIONES_NAME:-vacaciones}
+      POSTGRES_USER: ${DB_VACACIONES_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_VACACIONES_PASSWORD:-postgres}
+    volumes:
+      - vol-vacaciones:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_VACACIONES_USER:-postgres} -d ${DB_VACACIONES_NAME:-vacaciones}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - microservices-network
+
+  vacaciones-service:
+    build: ./microservicios/gestion-vacaciones
+    expose:
+      - "8085"   # visible solo dentro de la red de Docker (Reto 3: borde único)
+    environment:
+      PORT: 8085
+      DB_HOST: database-vacaciones
+      DB_PORT: 5432
+      DB_NAME: ${DB_VACACIONES_NAME:-vacaciones}
+      DB_USER: ${DB_VACACIONES_USER:-postgres}
+      DB_PASSWORD: ${DB_VACACIONES_PASSWORD:-postgres}
+      RABBITMQ_HOST: message-broker
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin}
+    depends_on:
+      database-vacaciones:
+        condition: service_healthy
+      message-broker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8085/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - microservices-network
+
+  # ── Mensajería asincrónica (Reto 4): eventos del ecosistema ──
+  message-broker:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"     # AMQP: productores y consumidores
+      - "15672:15672"   # Management UI: http://localhost:15672
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-admin}
+    volumes:
+      - vol-rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - microservices-network
+
+  # ── Borde del sistema (Reto 3): único servicio con puertos al host ──
+  api-gateway:
+    build: ./microservicios/api-gateway
+    ports:
+      - "8080:8080"   # ← el ÚNICO puerto publicado al host
+    environment:
+      PORT: 8080
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      EMPLEADOS_URL: http://empleados-service:8081
+      DEPARTAMENTOS_URL: http://departamentos-service:8082
+      PERFILES_URL: http://perfiles-service:8083
+      NOTIFICACIONES_URL: http://notificaciones-service:8084
+      VACACIONES_URL: http://vacaciones-service:8085
+      AUTH_URL: http://auth-service:8086
+    depends_on:
+      empleados-service:
+        condition: service_started
+      departamentos-service:
+        condition: service_started
+      perfiles-service:
+        condition: service_started
+      notificaciones-service:
+        condition: service_started
+      vacaciones-service:
+        condition: service_started
+      auth-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - microservices-network
+
+  # ── Integración Continua (Reto 7, P1): Jenkins ──
+  jenkins:
+    build:
+      context: ./jenkins
+      dockerfile: Dockerfile
+    container_name: jenkins
+    ports:
+      - "9090:8080"     # Interfaz web
+      - "50000:50000"   # Comunicación con agentes
+    volumes:
+      - jenkins_data:/var/jenkins_home
+      - ./jenkins/init.groovy.d:/var/jenkins_home/init.groovy.d:ro
+      - ./jenkins/casc.yaml:/var/jenkins_home/casc_configs/jobs.yaml:ro
+      # Repo como SCM local (P2, Opción A): los jobs clonan file:///workspace.
+      - ./:/workspace:ro
+      # El worktree resuelve sus objetos en el .git principal del host;
+      # montarlo en la misma ruta absoluta hace que el clone file:// funcione.
+      - /var/run/docker.sock:/var/run/docker.sock   # Acceso al Docker del host
+    environment:
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false -Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true
+      - CASC_JENKINS_CONFIG=/var/jenkins_home/casc_configs
+      - SONAR_TOKEN=${SONAR_TOKEN:-}   # Reto 7 P3: JCasC lo usa como credencial (ver casc.yaml)
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}   # Reto 7 P4: JCasC lo usa como credencial jwt-secret
+    networks:
+      - microservices-network
+
+  # ── Calidad (Reto 7, P3): SonarQube + PostgreSQL ──
+  sonarqube:
+    image: sonarqube:lts-community
+    container_name: sonarqube
+    ports:
+      - "9000:9000"
+    environment:
+      - SONAR_JDBC_URL=jdbc:postgresql://sonar-db:5432/sonar
+      - SONAR_JDBC_USERNAME=sonar
+      - SONAR_JDBC_PASSWORD=sonar
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_logs:/opt/sonarqube/logs
+      - sonarqube_extensions:/opt/sonarqube/extensions
+    depends_on:
+      - sonar-db
+    networks:
+      - microservices-network
+
+  sonar-db:
+    image: postgres:16-alpine
+    container_name: sonar-db
+    environment:
+      - POSTGRES_DB=sonar
+      - POSTGRES_USER=sonar
+      - POSTGRES_PASSWORD=sonar
+    volumes:
+      - sonar_db_data:/var/lib/postgresql/data
+    networks:
+      - microservices-network
+
+  # ── Registro local (Reto 7, P4): las imágenes del pipeline se publican acá ──
+  registry:
+    image: registry:2
+    container_name: docker-registry
+    ports:
+      - "5000:5000"
+    volumes:
+      - registry_data:/var/lib/registry
+    networks:
+      - microservices-network
+
+  # ── Observabilidad (Reto 8, S3+S8): Prometheus + Grafana + Loki/Promtail + Zipkin ──
+  #
+  # DECISIÓN — conflicto del puerto 9090:
+  #   El reto pide Prometheus en el 9090, pero Jenkins (Reto 7) ya publica el
+  #   9090 del host con "9090:8080". Para no romper Jenkins, Prometheus se
+  #   publica como "9091:9090":
+  #     - contenedor: 9090  → estándar de la imagen y URL que usan Grafana y el
+  #                          propio Prometheus (http://prometheus:9090)
+  #     - host:       9091  → http://localhost:9091
+  #   El puerto de Jenkins NO se modifica.
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9091:9090"   # host 9091 → contenedor 9090 (9090 del host es de Jenkins)
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle   # permite recargar la config sin recrear el contenedor
+    volumes:
+      - ./observabilidad/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:9090/-/healthy || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - microservices-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"   # http://localhost:3000
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      # Reto 8 T3: canal Telegram (contact-points.yml expande $TELEGRAM_*).
+      # Valores reales en .env (nunca en git); vacío = alertas sin envío.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    volumes:
+      - grafana-data:/var/lib/grafana                                    # persistencia
+      - ./observabilidad/grafana/provisioning:/etc/grafana/provisioning:ro # datasources + dashboards
+      - ./observabilidad/grafana/dashboards:/var/lib/grafana/dashboards:ro  # JSON de T3
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - microservices-network
+
+  loki:
+    image: grafana/loki:2.9.8
+    container_name: loki
+    ports:
+      - "3100:3100"   # API HTTP de Loki (push desde Promtail y queries desde Grafana)
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./observabilidad/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:3100/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - microservices-network
+
+  promtail:
+    image: grafana/promtail:2.9.8
+    container_name: promtail
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./observabilidad/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro   # S8: descubrir contenedores y leer sus logs
+      - promtail-positions:/var/lib/promtail          # no reenvía logs ya leídos
+    depends_on:
+      - loki
+    networks:
+      - microservices-network
+
+  zipkin:
+    image: openzipkin/zipkin:3
+    container_name: zipkin
+    ports:
+      - "9411:9411"   # UI + API de ingesta (http://localhost:9411)
+    environment:
+      # Almacenamiento en memoria: suficiente para demo/CI y sin dependencias extra.
+      STORAGE_TYPE: mem
+      JAVA_OPTS: -Xms128m -Xmx512m
+    networks:
+      - microservices-network
+
+networks:
+  microservices-network:
+    driver: bridge
+
+volumes:
+  vol-auth:
+  vol-empleados:
+  vol-departamentos:
+  vol-notificaciones:
+  vol-perfiles:
+  vol-vacaciones:
+  vol-rabbitmq:
+  jenkins_data:
+  sonarqube_data:
+  sonarqube_logs:
+  sonarqube_extensions:
+  sonar_db_data:
+  registry_data:
+  prometheus-data:
+  grafana-data:
+  loki-data:
+  promtail-positions:

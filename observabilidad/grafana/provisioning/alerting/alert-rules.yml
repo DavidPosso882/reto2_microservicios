@@ -1,0 +1,179 @@
+# Reto 8 (S5) — Reglas de alerta aprovisionadas como código (Grafana unified alerting).
+#
+# Grafana las carga al arrancar y las reconcilia cada pocos minutos: la fuente
+# de verdad es este fichero, no la UI. Viven en la carpeta "Reto 8" (folderUid
+# reto8), la misma que crea el proveedor de dashboards (dashboards.yml).
+#
+# Cada regla es la cadena estándar de unified alerting:
+#   A) consulta instantánea a Prometheus (uid: prometheus)
+#   B) reduce      -> un valor por serie
+#   C) threshold   -> la condición que dispara
+#
+# Nota sobre los nombres de métricas: los 7 servicios no publican lo mismo.
+#   - Node/Go/Ruby: http_requests_total / http_request_duration_seconds{code}
+#   - Python:       http_requests_total / http_request_duration_seconds{status}
+#   - Java:         http_server_requests_seconds_count / _sum{status}
+# Por eso las expresiones suman una rama por familia. `or vector(0)` evita que
+# la regla caiga en NoData cuando un servicio no tiene tráfico en la ventana.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: reto8-ecosistema
+    folder: Reto 8
+    folderUid: reto8
+    interval: 1m
+    rules:
+      # ── 1. Servicio Caído ─────────────────────────────────────────────────
+      # up{job} == 0 sostenido 1 minuto. Se consulta `up` sin filtrar por valor
+      # y se compara en el threshold: así la regla tiene siempre una serie por
+      # target y no depende de que la comparación devuelva algo.
+      - uid: reto8-servicio-caido
+        orgId: 1
+        title: Servicio Caído
+        condition: C
+        dashboardUid: reto8-ecosistema
+        panelId: 1
+        for: 1m
+        noDataState: NoData
+        execErrState: Error
+        isPaused: false
+        labels:
+          severity: critical
+          canal: telegram
+        annotations:
+          summary: "Servicio caído: {{ $labels.job }} no responde al scraping de Prometheus (up == 0)."
+          description: >-
+            Prometheus lleva más de 1 minuto sin poder recolectar métricas de
+            {{ $labels.job }} ({{ $labels.service }}). Revisar con
+            `docker compose ps` y `docker compose logs --tail=80 {{ $labels.job }}`.
+            El dashboard "Reto 8 — Ecosistema de microservicios" (panel
+            "Estado de los servicios (up)") muestra el mismo estado.
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 180
+              to: 0
+            datasourceUid: prometheus
+            model:
+              datasource:
+                type: prometheus
+                uid: prometheus
+              editorMode: code
+              expr: >-
+                up{job=~"(api-gateway|auth-service|empleados-service|departamentos-service|perfiles-service|notificaciones-service|vacaciones-service)"}
+              instant: true
+              intervalMs: 1000
+              legendFormat: "{{job}}"
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              settings:
+                mode: dropNN
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1
+                    type: lt
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+
+      # ── 2. Alta Tasa de Errores 5xx ───────────────────────────────────────
+      # (5xx / total de peticiones) > 10 % durante 2 minutos, agregado para
+      # todo el ecosistema (cualquier servicio que empiece a fallar arrastra la
+      # tasa). Mismo cálculo que el panel "Tasa de errores 5xx".
+      - uid: reto8-alta-tasa-errores
+        orgId: 1
+        title: Alta Tasa de Errores
+        condition: C
+        dashboardUid: reto8-ecosistema
+        panelId: 4
+        for: 2m
+        noDataState: NoData
+        execErrState: Error
+        isPaused: false
+        labels:
+          severity: warning
+          canal: telegram
+        annotations:
+          summary: "Alta tasa de errores: más del 10% de las respuestas son 5xx desde hace 2 minutos."
+          description: >-
+            Revisar el panel "Errores 4xx / 5xx por servicio" del dashboard
+            "Reto 8 — Ecosistema de microservicios" para identificar el servicio
+            y la ruta afectada; después correlacionar en Loki
+            (`{compose_service=~".+"} |= "error"`) y en Zipkin por traceId.
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              datasource:
+                type: prometheus
+                uid: prometheus
+              editorMode: code
+              expr: >-
+                ((sum(rate(http_requests_total{code=~"5.."}[1m])) or vector(0)) +
+                (sum(rate(http_requests_total{status=~"5.."}[1m])) or vector(0)) +
+                (sum(rate(http_server_requests_seconds_count{status=~"5.."}[1m])) or vector(0)))
+                /
+                ((sum(rate(http_requests_total[1m])) or vector(0)) +
+                (sum(rate(http_server_requests_seconds_count[1m])) or vector(0)))
+              instant: true
+              intervalMs: 1000
+              legendFormat: "5xx"
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              settings:
+                mode: dropNN
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0.1
+                    type: gt
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold

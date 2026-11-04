@@ -1,0 +1,57 @@
+# Reto 8 (S5) — Contact points de Grafana Alerting aprovisionados como código.
+#
+# Grafana lee este fichero al arrancar desde /etc/grafana/provisioning/alerting
+# (el directorio `provisioning` completo está montado read-only en
+# docker-compose.yml, así que este subdirectorio entra sin tocar el compose).
+#
+# El canal elegido es TELEGRAM: un bot de @BotFather y el chat_id del grupo o
+# del chat directo. Las credenciales NUNCA se escriben aquí: se inyectan como
+# variables de entorno del contenedor Grafana ($TELEGRAM_BOT_TOKEN,
+# $TELEGRAM_CHAT_ID) y Grafana las expande al leer el fichero de aprovisionamiento.
+# Ver README raíz §Reto 8 → "Canal de alertas (Telegram)" para los pasos.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: reto8-telegram
+    receivers:
+      - uid: reto8-telegram-receiver
+        type: telegram
+        # Si el servicio vuelve, también se notifica la resolución.
+        disableResolveMessage: false
+        settings:
+          # Generado por scripts/grafana-set-telegram.py desde este template con
+          # los valores REALES del .env local (entre comillas: los IDs numéricos
+          # expandidos como $VAR tumban Grafana — hallazgo T6 documentado).
+          # El .yml generado NO va a git (.gitignore); este template sí.
+          bottoken: "__TELEGRAM_BOT_TOKEN__"
+          chatid: "__TELEGRAM_CHAT_ID__"
+          # Plantilla user-friendly (T7): estado con icono, servicio afectado,
+          # resumen y enlaces directos (origen, dashboard, silencio). Sin Valor:
+          # el dump multi-var es ilegible y el dashboard tiene las gráficas.
+          # `or .Labels.job` cubre reglas sin etiqueta job (muestra —).
+          message: |
+            {{ if eq .Status "firing" }}🔴 <b>ALERTA ACTIVA</b>{{ else }}🟢 <b>RESUELTA</b>{{ end }}
+            <b>{{ .CommonLabels.alertname }}</b> · proyecto-final-microservicios
+            {{ range .Alerts }}———————————
+            Servicio: <code>{{ or .Labels.job "—" }}</code> · {{ .Status }}
+            Resumen: {{ .Annotations.summary }}
+            Origen: {{ .GeneratorURL }}
+            {{ with .DashboardURL }}Dashboard: {{ . }}
+            {{ end }}Silenciar: {{ .SilenceURL }}
+            {{ end }}Consola: http://localhost:3000/alerting/list
+
+  # ── Alternativa documentada: Discord ──────────────────────────────────────
+  # Se deja COMENTADO a propósito: un receiver cuyo webhook no existe se queda
+  # en error de envío y ensucia los logs de Grafana. Para usarlo, exporta
+  # $DISCORD_WEBHOOK_URL en el contenedor, descomenta este bloque y cambia el
+  # `receiver` de notification-policies.yml a `reto8-discord`.
+  #
+  # - orgId: 1
+  #   name: reto8-discord
+  #   receivers:
+  #     - uid: reto8-discord-receiver
+  #       type: discord
+  #       disableResolveMessage: false
+  #       settings:
+  #         url: $DISCORD_WEBHOOK_URL

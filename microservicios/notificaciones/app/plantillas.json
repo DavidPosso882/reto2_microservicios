@@ -1,0 +1,12 @@
+{
+  "_nota": "Plantillas configurables de notificaciones (requisito proyecto final). Editar los textos sin tocar código; variables entre {llaves}. Si el fichero falta o una clave no existe, el servicio usa el texto built-in idéntico.",
+  "bienvenida": "Hola {nombre} {apellido}, ¡bienvenido/a a la empresa! Tu cuenta fue creada con éxito.",
+  "desvinculacion": "Hola {nombre} {apellido}, te informamos que tu vínculo con la empresa ha finalizado. Gracias por tu paso por la organización.",
+  "vacaciones_programadas": "Tus vacaciones fueron programadas desde {fechaInicio} hasta {fechaFin}. ¡Buen descanso!",
+  "seguridad": "Para establecer o recuperar tu contraseña, usa este token (válido por {expiracion}): {token}.",
+  "cuenta_desactivada_permanente": "Su cuenta fue desactivada en forma permanente. Motivo: {motivo}.",
+  "cuenta_desactivada_temporal": "Su cuenta fue desactivada temporalmente. Motivo: {motivo}.",
+  "cuenta_activada": "Su cuenta fue reactivada. ¡Bienvenido de regreso! Motivo: {motivo}.",
+  "vacaciones_iniciadas": "Tus vacaciones comenzaron el {fechaInicio} y finalizan el {fechaFin}. ¡Buen descanso!",
+  "vacaciones_finalizadas": "Tus vacaciones finalizaron: del {fechaInicio} al {fechaFin}. ¡Bienvenido/a de vuelta!"
+}

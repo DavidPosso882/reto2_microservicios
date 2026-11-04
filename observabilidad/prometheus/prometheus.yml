@@ -1,0 +1,84 @@
+# Reto 8 (S3, S8) — Prometheus del ecosistema.
+#
+# Contrato con T2: CADA servicio expone sus métricas en formato Prometheus en
+# `GET /metrics` sobre el puerto interno que ya usa dentro de la red Docker.
+# Si algún servicio termina publicando en otra ruta (p. ej. `/actuator/prometheus`
+# en Spring Boot con micrometer), se ajusta el `metrics_path` de ESE job.
+#
+# Los targets se resuelven por NOMBRE DE SERVICIO de la red Docker
+# (`microservices-network`), nunca por IP ni `localhost`: así el scrape funciona
+# sin importar el orden de arranque ni las IPs que asigne Docker.
+#
+# Ninguno de estos puertos está publicado al host (Reto 3: borde único en el
+# api-gateway). Prometheus corre dentro del contenedor en el puerto 9090 y se
+# publica en el host como 9091 porque Jenkins ya ocupa el 9090 del host
+# (ver comentario de conflicto en docker-compose.yml).
+
+global:
+  scrape_interval: 15s        # S8: cadencia de recolección
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+  external_labels:
+    ecosystem: reto2-reto7
+    environment: local
+
+scrape_configs:
+  # ── Borde del sistema: PRIMER job (S8) ──
+  # El gateway es el punto de entrada de todas las peticiones, así que sus
+  # métricas son las primeras que se deben ver al abrir Prometheus/Grafana.
+  - job_name: api-gateway
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api-gateway:8080"]
+        labels:
+          service: api-gateway
+          tier: edge
+
+  # ── Microservicios (red interna, sin puertos publicados) ──
+  - job_name: auth-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["auth-service:8086"]
+        labels:
+          service: auth-service
+          tier: backend
+
+  - job_name: empleados-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["empleados-service:8081"]
+        labels:
+          service: empleados-service
+          tier: backend
+
+  - job_name: departamentos-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["departamentos-service:8082"]
+        labels:
+          service: departamentos-service
+          tier: backend
+
+  - job_name: perfiles-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["perfiles-service:8083"]
+        labels:
+          service: perfiles-service
+          tier: backend
+
+  - job_name: notificaciones-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["notificaciones-service:8084"]
+        labels:
+          service: notificaciones-service
+          tier: backend
+
+  - job_name: vacaciones-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["vacaciones-service:8085"]
+        labels:
+          service: vacaciones-service
+          tier: backend
