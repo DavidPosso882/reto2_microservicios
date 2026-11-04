@@ -7,7 +7,7 @@ import { buildSwaggerSpec } from './swagger.js';
 
 /**
  * Builds the Express application.
- *
+ *Prueba 2 pipeline
  * The store is injected so the same app can run against PostgreSQL in
  * production (PgDepartamentoStore) or an in-memory store in tests.
  *
