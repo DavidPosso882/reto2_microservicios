@@ -1,10 +1,9 @@
-# Documentación del proyecto (se versiona: README, docs/, catálogos)
-*.pdf
-*.docx
+# Markdown y docs: solo README se sube a GitHub (el zip de entrega si lleva todo)
+*.md
 !README.md
 !**/README.md
-!docs/**/*.md
-!CATALOGO_EVENTOS.md
+*.pdf
+*.docx
 
 # Variables de entorno y secretos (nunca se versionan valores reales)
 .env
@@ -59,6 +58,12 @@ cucumber.html
 
 # Coleccion Bruno: vista complementaria local, no se versiona
 pruebas_bruno/
+
+# Locales que nunca van a GitHub
+*.zip
+*.tar.gz
+*.log
+docker-compose.override.yml
 
 # Cache del binario standalone de compose (lo baja scripts/fetch-compose.py)
 .ci-tools/

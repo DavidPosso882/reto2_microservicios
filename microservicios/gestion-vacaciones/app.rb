@@ -51,7 +51,10 @@ module Vacaciones
     # ── Health & metrics (Reto 8) ──────────────────────────────────────────
     get '/health' do
       database = settings.respond_to?(:database) ? settings.database : nil
-      broker_probe = settings.respond_to?(:broker_status) ? settings.broker_status : nil
+      # Sinatra evalua los Proc de `set` al leerlos: settings.broker_status
+      # ya puede venir como String ('UP'/'DOWN') en vez del lambda original.
+      # Se aceptan ambos para no tumbar el healthcheck con NoMethodError.
+      raw_probe = settings.respond_to?(:broker_status) ? settings.broker_status : nil
 
       db_status = if database.nil?
                     'N/A'
@@ -63,7 +66,17 @@ module Vacaciones
                       'DOWN'
                     end
                   end
-      broker_status = broker_probe ? broker_probe.call : 'N/A'
+      broker_status = if raw_probe.nil?
+                      'N/A'
+                    elsif raw_probe.respond_to?(:call)
+                      begin
+                        raw_probe.call
+                      rescue StandardError
+                        'DOWN'
+                      end
+                    else
+                      raw_probe.to_s
+                    end
       overall = [db_status, broker_status].include?('DOWN') ? 'DOWN' : 'UP'
 
       status(overall == 'UP' ? 200 : 503)
