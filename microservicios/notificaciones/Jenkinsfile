@@ -29,9 +29,11 @@ pipeline {
             }
             steps {
                 dir('microservicios/notificaciones') {
-                    // pytest-cov no está en requirements (es infra de CI):
-                    // se instala aquí para no contaminar la imagen de prod.
-                    sh 'pip install -q -r requirements.txt pytest-cov && python -c "import app.main"'
+                    // Sin red ni dependencias: valida sintaxis y toolchain.
+                    // Las dependencias (incluido pytest-cov, infra de CI) se
+                    // instalan en Test: cada etapa corre en un contenedor nuevo
+                    // y lo instalado fuera de volúmenes se pierde entre etapas.
+                    sh 'python --version && python -m compileall -q app && echo BUILD-OK'
                 }
             }
         }
@@ -45,10 +47,11 @@ pipeline {
             }
             steps {
                 dir('microservicios/notificaciones') {
-                    // --cov-fail-under=70: gate de cobertura en la etapa.
-                    // El '|| true' deja que surefire... (junit) marque UNSTABLE
-                    // en fallos; la cobertura la vigila además el QG (FAILURE).
-                    sh 'mkdir -p reports && pytest tests/ --junitxml=reports/junit.xml --cov=app --cov-report=xml:reports/coverage.xml --cov-fail-under=70 || true'
+                    // pytest-cov no está en requirements (es infra de CI):
+                    // se instala aquí (la etapa Build corre en otro contenedor).
+                    // `python -m pytest`: el binario quedaría en /tmp/.local/bin
+                    // (fuera del PATH), el módulo siempre resuelve.
+                    sh 'pip install -q -r requirements.txt pytest-cov && mkdir -p reports && python -m pytest tests/ --junitxml=reports/junit.xml --cov=app --cov-report=xml:reports/coverage.xml --cov-fail-under=70 || true'
                 }
             }
             post {
