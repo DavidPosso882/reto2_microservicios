@@ -26,7 +26,7 @@ pipeline {
                 docker {
                     // Misma toolchain que el Dockerfile del servicio.
                     image 'node:22-alpine'
-                    args '-v jenkins-npm:/root/.npm'
+                    args '-e HOME=/tmp -v jenkins-npm:/tmp/.npm'
                 }
             }
             steps {
@@ -40,7 +40,7 @@ pipeline {
             agent {
                 docker {
                     image 'node:22-alpine'
-                    args '-v jenkins-npm:/root/.npm'
+                    args '-e HOME=/tmp -v jenkins-npm:/tmp/.npm'
                 }
             }
             steps {
@@ -70,7 +70,7 @@ pipeline {
             agent {
                 docker {
                     image 'sonarsource/sonar-scanner-cli:5.0.1'
-                    args '--network host'
+                    args '-e HOME=/tmp --network host'
                 }
             }
             steps {

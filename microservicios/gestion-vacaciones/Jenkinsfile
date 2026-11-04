@@ -67,7 +67,7 @@ pipeline {
             agent {
                 docker {
                     image 'sonarsource/sonar-scanner-cli:5.0.1'
-                    args '--network host'
+                    args '-e HOME=/tmp --network host'
                 }
             }
             steps {

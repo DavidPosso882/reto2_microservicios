@@ -26,7 +26,7 @@ pipeline {
                 docker {
                     // Misma toolchain que la etapa build del Dockerfile.
                     image 'golang:1.26-alpine'
-                    args '-v jenkins-go:/go'
+                    args '-e HOME=/tmp -v jenkins-go:/tmp/go'
                 }
             }
             steps {
@@ -40,7 +40,7 @@ pipeline {
             agent {
                 docker {
                     image 'golang:1.26-alpine'
-                    args '-v jenkins-go:/go'
+                    args '-e HOME=/tmp -v jenkins-go:/tmp/go'
                 }
             }
             steps {
@@ -79,7 +79,7 @@ pipeline {
             agent {
                 docker {
                     image 'sonarsource/sonar-scanner-cli:5.0.1'
-                    args '--network host'
+                    args '-e HOME=/tmp --network host'
                 }
             }
             steps {

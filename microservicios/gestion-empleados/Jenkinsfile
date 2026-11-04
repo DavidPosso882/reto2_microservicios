@@ -30,7 +30,7 @@ pipeline {
                     // Socket para Testcontainers + caché m2. Host network: el
                     // firewall filtra puente->puertos efímeros; group-add 983
                     // para leer el socket (root:docker 660).
-                    args '-v /var/run/docker.sock:/var/run/docker.sock -v jenkins-m2:/root/.m2 --group-add 983 --network host'
+                    args '-v /var/run/docker.sock:/var/run/docker.sock -e HOME=/tmp -v jenkins-m2:/tmp/.m2 --group-add 983 --network host'
                 }
             }
             steps {
@@ -44,7 +44,7 @@ pipeline {
             agent {
                 docker {
                     image 'maven:3.9-eclipse-temurin-21'
-                    args '-v /var/run/docker.sock:/var/run/docker.sock -v jenkins-m2:/root/.m2 --group-add 983 --network host'
+                    args '-v /var/run/docker.sock:/var/run/docker.sock -e HOME=/tmp -v jenkins-m2:/tmp/.m2 --group-add 983 --network host'
                 }
             }
             steps {
@@ -71,7 +71,7 @@ pipeline {
             agent {
                 docker {
                     image 'maven:3.9-eclipse-temurin-21'
-                    args '-v /var/run/docker.sock:/var/run/docker.sock -v jenkins-m2:/root/.m2 --group-add 983 --network host'
+                    args '-v /var/run/docker.sock:/var/run/docker.sock -e HOME=/tmp -v jenkins-m2:/tmp/.m2 --group-add 983 --network host'
                 }
             }
             steps {
