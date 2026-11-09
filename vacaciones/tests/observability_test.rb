@@ -18,7 +18,16 @@ class ObservabilityTest < Minitest::Test
     Vacaciones::Observability.setup!
   end
 
+  # Los contadores son globales del proceso y otras pruebas también los
+  # incrementan (el orden es aleatorio), así que se compara el incremento y no
+  # el valor absoluto: antes fallaba según la semilla (p. ej. 10 en vez de 2).
+  PETICIONES_GET = /http_requests_total\{[^}]*method="GET"[^}]*route="\/vacaciones"[^}]*code="200"[^}]*\} (\S+)/.freeze
+  INICIADAS = /vacaciones_scheduler_transitions_total\{type="iniciadas"\} (\S+)/.freeze
+  EVENTOS_INICIADAS = /eventos_publicados_total\{routing_key="vacaciones\.iniciadas"\} (\S+)/.freeze
+
   def test_metrics_text_expone_proceso_peticiones_y_contadores
+    antes = Vacaciones::Observability.metrics_text
+
     Vacaciones::Observability.record_request('GET', '/vacaciones', '200', 0.012)
     Vacaciones::Observability.record_scheduler_transition('iniciadas', 2)
     Vacaciones::Observability.record_event_published('vacaciones.iniciadas')
@@ -27,9 +36,15 @@ class ObservabilityTest < Minitest::Test
 
     assert_includes texto, 'process_cpu_seconds_total'
     assert_includes texto, 'process_resident_memory_bytes'
-    assert_match(/http_requests_total\{[^}]*method="GET"[^}]*route="\/vacaciones"[^}]*code="200"[^}]*\} 1/, texto)
-    assert_includes texto, 'vacaciones_scheduler_transitions_total{type="iniciadas"} 2'
-    assert_includes texto, 'eventos_publicados_total{routing_key="vacaciones.iniciadas"} 1'
+    assert_equal 1, valor(texto, PETICIONES_GET) - valor(antes, PETICIONES_GET)
+    assert_equal 2, valor(texto, INICIADAS) - valor(antes, INICIADAS)
+    assert_equal 1, valor(texto, EVENTOS_INICIADAS) - valor(antes, EVENTOS_INICIADAS)
+  end
+
+  # Valor numérico de la serie que casa con el patrón (0 si aún no existe).
+  def valor(texto, patron)
+    coincidencia = texto.match(patron)
+    coincidencia ? coincidencia[1].to_f.round : 0
   end
 
   def test_json_logger_incluye_campos_requeridos
