@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 # Configuration from environment variables with local defaults.
+#Prueba pipeline
 module Vacaciones
   class Config
     attr_reader :port, :db_host, :db_port, :db_name, :db_user, :db_password,

@@ -15,7 +15,7 @@ import { logger } from './observability/logger.js';
 
 /**
  * Builds the Express application.
- *
+ *Prueba 3 pipeline
  * The store is injected so the same app can run against PostgreSQL in
  * production (PgDepartamentoStore) or an in-memory store in tests.
  *

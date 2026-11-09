@@ -8,11 +8,10 @@
 pipeline {
     agent none
 
-    // Reto 7 — automatización recomendada por cátedra: polling contra
-    // file:///workspace (no hay webhook con SCM local). Revisa la rama
-    // cada ~2 min y dispara solo si hubo commit nuevo. No paralelizar
-    // E2E entre pipelines: comparten puertos fijos (ver guía Punto 5).
-    triggers { pollSCM('H/2 * * * *') }
+    triggers {
+        // Revisa cambios en el repo cada minuto y dispara el build automáticamente.
+        pollSCM('* * * * *')
+    }
 
     stages {
         stage('Checkout') {
@@ -61,6 +60,9 @@ pipeline {
                     junit 'empleados/target/surefire-reports/*.xml, empleados/target/failsafe-reports/*.xml'
                     recordCoverage(
                         tools: [[parser: 'JACOCO', pattern: 'empleados/target/site/jacoco/jacoco.xml']],
+                        // jacoco.xml nombra las clases por paquete: sin esto la
+                        // pestaña Coverage no puede mostrar el código coloreado.
+                        sourceDirectories: [[path: 'empleados/src/main/java']],
                         sourceCodeRetention: 'EVERY_BUILD'
                     )
                 }
@@ -120,6 +122,9 @@ pipeline {
             // Jenkins/Sonar/registry del proyecto base). '|| true' tras run_bdd:
             // es junit quien marca UNSTABLE. Los E2E no se paralelizan entre
             // pipelines: comparten puertos fijos del stack (8080) y proyecto.
+            // El lock serializa esta etapa entre ambos jobs: se toma antes del agente
+            // (quien espera no ocupa ejecutor) y cubre el post con el 'down -v'.
+            options { lock('e2e-stack') }
             agent {
                 docker {
                     image 'python:3.11-slim'
@@ -131,17 +136,26 @@ pipeline {
                 withCredentials([string(credentialsId: 'jwt-secret', variable: 'JWT_CI')]) {
                     sh 'export JWT_SECRET=$JWT_CI; scripts/ci-compose.sh up -d --build api-gateway'
                 }
-                sh 'BASE_URL=http://localhost:8080 python3 scripts/wait-for-e2e-ready.py'
-                sh 'cd e2e-tests && ([ -x .venv/bin/behave ] || (python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt)) && BASE_URL=http://localhost:8080 ./run_bdd.sh || true'
+                // Gateway E2E en 18080 (docker-compose.e2e.yml): no choca con el
+                // stack principal en 8080, así ambos pueden correr a la vez.
+                sh 'BASE_URL=http://localhost:18080 python3 scripts/wait-for-e2e-ready.py'
+                // pip install siempre (rápido si ya está): un .venv cacheado de un
+                // build anterior no tendría las dependencias nuevas.
+                sh 'cd e2e-tests && ([ -d .venv ] || python3 -m venv .venv) && .venv/bin/pip install -q -r requirements.txt && BASE_URL=http://localhost:18080 ./run_bdd.sh || true'
             }
             post {
                 always {
+                    // Los tres reportes del Reto 6, publicados en Jenkins:
+                    // 1. JUnit XML -> pestaña Test Result (marca UNSTABLE si falla un escenario)
                     junit 'e2e-tests/reports/TESTS-*.xml'
-                    // Sin paso cucumber(): el JSON de behave no lo digiere el
-                    // plugin cucumber-reports ("Missing report result" aun con
-                    // 18/18 passed, marca UNSTABLE en verde). La guia ofrece
-                    // publishHTML como alternativa generica y junit sigue
-                    // siendo el gate (escenarios fallidos -> UNSTABLE).
+                    // 2. Cucumber JSON -> pestaña Cucumber Reports (características y escenarios en español)
+                    cucumber(
+                        jsonReportDirectory: 'e2e-tests/reports',
+                        fileIncludePattern: 'cucumber.json',
+                        buildStatus: 'UNSTABLE',
+                        reportTitle: 'Reporte BDD (Cucumber)'
+                    )
+                    // 3. HTML de behave -> enlace Reporte BDD
                     publishHTML(target: [reportDir: 'e2e-tests/reports', reportFiles: 'cucumber.html', reportName: 'Reporte BDD', keepAll: true, alwaysLinkToLastBuild: true])
                     withCredentials([string(credentialsId: 'jwt-secret', variable: 'JWT_CI')]) {
                         sh 'export JWT_SECRET=$JWT_CI; scripts/ci-compose.sh logs --no-color > docker-logs.txt || true'

@@ -10,4 +10,4 @@ REG=""
 if [ "${1:-}" = "-r" ]; then REG="-f docker-compose.registry.yml"; shift; fi
 # shellcheck disable=SC2086
 : "${JWT_SECRET:?JWT_SECRET debe estar exportado (credencial jwt-secret en Jenkins)}"
-exec .ci-tools/docker-compose -p reto7-e2e -f docker-compose.yml $REG "$@"
+exec .ci-tools/docker-compose -p reto7-e2e -f docker-compose.yml -f docker-compose.e2e.yml $REG "$@"

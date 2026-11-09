@@ -12,8 +12,7 @@ COPY Gemfile ./
 # stage, so the image build itself is the reproducible step. Frozen/deployment
 # mode is deliberately NOT enabled: it requires a committed lockfile and makes
 # the build fail with "The deployment setting requires a lockfile" (exit 16).
-RUN bundle config set --local without 'development test' \
-    && bundle install --jobs 4
+RUN bundle install --jobs 4
 
 # ── Stage: runtime ──────────────────────────────────────────────────────────
 FROM ruby:3.3-slim
@@ -31,6 +30,7 @@ COPY --from=build /app/Gemfile.lock ./Gemfile.lock
 COPY Gemfile ./
 COPY app ./app
 COPY app.rb openapi.yaml ./
+COPY tests ./tests
 
 ENV RACK_ENV=production \
     BUNDLE_GEMFILE=/app/Gemfile

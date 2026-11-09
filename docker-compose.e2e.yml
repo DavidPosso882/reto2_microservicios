@@ -1,0 +1,36 @@
+# Reto 7 P4 — Override para el stack E2E aislado (proyecto reto7-e2e).
+# Cambia los port bindings que colisionan con el stack principal del host, para
+# que el E2E de Jenkins y el sistema principal puedan estar encendidos a la vez.
+# `ports: []` NO sirve: Compose fusiona listas de puertos; hacen falta las
+# etiquetas !reset / !override (Compose >= 2.24; CI usa v2.29.7).
+# Uso en ci-compose.sh: se pasa junto al docker-compose.yml principal.
+services:
+  message-broker:
+    ports: !reset []   # sin binding al host: 5672/15672 quedan para el stack principal
+    hostname: reto7-e2e-rabbit   # hostname fijo: evita conflicto de Erlang cookie entre reinicios
+    image: rabbitmq:3-alpine     # imagen ligera sin management UI: menos memoria
+    healthcheck:
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+  api-gateway:
+    # La suite BDD (agente con --network host) entra por localhost:18080;
+    # el 8080 queda libre para el gateway del stack principal.
+    ports: !override
+      - "18080:8080"
+    restart: on-failure:5
+  # Bajo carga, un servicio puede morir al arrancar por un fallo transitorio
+  # (p. ej. UnknownHostException de la BD) y dejar caída toda la corrida.
+  auth-service:
+    restart: on-failure:5
+  departamentos-service:
+    restart: on-failure:5
+  empleados-service:
+    restart: on-failure:5
+  notificaciones-service:
+    restart: on-failure:5
+  perfiles-service:
+    restart: on-failure:5
+  vacaciones-service:
+    restart: on-failure:5

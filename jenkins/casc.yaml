@@ -24,7 +24,7 @@ jobs:
                 remote {
                   url('file:///workspace')
                 }
-                branches('*/reto-7-integracion-continua-jenkins')
+                branches('*/reto-8-observabilidad-monitoreo')
               }
             }
             scriptPath('empleados/Jenkinsfile')
@@ -46,7 +46,7 @@ jobs:
                 remote {
                   url('file:///workspace')
                 }
-                branches('*/reto-7-integracion-continua-jenkins')
+                branches('*/reto-8-observabilidad-monitoreo')
               }
             }
             scriptPath('vacaciones/Jenkinsfile')

@@ -177,3 +177,5 @@ ruby tests/scheduler_test.rb           # Reto 5: transiciones, idempotencia, env
    `EN_CURSO` → evento `vacaciones.iniciadas`, y luego a `FINALIZADA` →
    evento `vacaciones.finalizadas` (ver la sección Scheduler para la
    semántica de la comparación inclusiva por fecha).
+
+

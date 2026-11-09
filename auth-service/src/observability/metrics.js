@@ -32,8 +32,15 @@ export function getMetrics(service) {
   return cached;
 }
 
-/** Groups dynamic segments so labels stay bounded. */
-export function normalizeRoute(path = '/') {
+/**
+ * Groups dynamic segments so labels stay bounded.
+ *
+ * Accepts a path string or the Express request: metricsMiddleware calls the
+ * resolver with `req`, and calling `.replace` on the request object threw
+ * inside the 'finish' handler, crashing auth-service after its first request.
+ */
+export function normalizeRoute(input = '/') {
+  const path = typeof input === 'string' ? input : (input && input.path) || '/';
   return path
     .replace(/\/V-\d{4}-\d{4}/g, '/:id')
     .replace(/\/[A-Z]\d{3,}/g, '/:id')

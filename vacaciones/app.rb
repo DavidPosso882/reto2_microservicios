@@ -63,7 +63,7 @@ module Vacaciones
                       'DOWN'
                     end
                   end
-      broker_status = broker_probe ? broker_probe.call : 'N/A'
+      broker_status = broker_probe.respond_to?(:call) ? broker_probe.call : (broker_probe || 'N/A')
       overall = [db_status, broker_status].include?('DOWN') ? 'DOWN' : 'UP'
 
       status(overall == 'UP' ? 200 : 503)
