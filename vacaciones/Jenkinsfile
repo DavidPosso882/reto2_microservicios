@@ -121,9 +121,26 @@ pipeline {
                 // Gateway E2E en 18080 (docker-compose.e2e.yml): no choca con el
                 // stack principal en 8080, así ambos pueden correr a la vez.
                 sh 'BASE_URL=http://localhost:18080 python3 scripts/wait-for-e2e-ready.py'
-                // pip install siempre (rápido si ya está): un .venv cacheado de un
-                // build anterior no tendría las dependencias nuevas.
-                sh 'cd e2e-tests && ([ -d .venv ] || python3 -m venv .venv) && .venv/bin/pip install -q -r requirements.txt && BASE_URL=http://localhost:18080 ./run_bdd.sh || true'
+                // 1. rm -rf reports: sin esto, si la suite no corría, junit/cucumber
+                //    publicaban los reportes de un build ANTERIOR (empleados #28).
+                // 2. pip install siempre (un .venv cacheado no tendría dependencias
+                //    nuevas) con 3 reintentos ante fallos transitorios de red.
+                // 3. Si las dependencias no quedan instaladas, la etapa falla aquí
+                //    con un mensaje claro en vez de seguir sin probar nada.
+                // Solo run_bdd.sh lleva '|| true': es junit quien marca UNSTABLE.
+                sh '''
+                    cd e2e-tests
+                    rm -rf reports
+                    [ -d .venv ] || python3 -m venv .venv
+                    for intento in 1 2 3; do
+                        .venv/bin/pip install -q -r requirements.txt && break
+                        echo "pip install falló (intento $intento/3), reintentando en 10 s"
+                        sleep 10
+                    done
+                    .venv/bin/python -c "import behave, behave_cucumber_formatter, behave_html_formatter, requests" \
+                        || { echo "ERROR: dependencias de e2e-tests sin instalar"; exit 1; }
+                    BASE_URL=http://localhost:18080 ./run_bdd.sh || true
+                '''
             }
             post {
                 always {
