@@ -43,7 +43,11 @@ pipeline {
             agent {
                 docker {
                     image 'maven:3.9-eclipse-temurin-21'
-                    args '-v /var/run/docker.sock:/var/run/docker.sock -v jenkins-m2:/root/.m2 --group-add 983 --network host'
+                    // --add-host host.docker.internal:host-gateway: nombre estable
+                    // del host que publica los puertos de Testcontainers, válido en
+                    // Linux (IP del host) y en Docker Desktop/Windows (donde
+                    // 127.0.0.1 del agente NO ve esos puertos: connection refused).
+                    args '-v /var/run/docker.sock:/var/run/docker.sock -v jenkins-m2:/root/.m2 --group-add 983 --network host --add-host=host.docker.internal:host-gateway'
                 }
             }
             steps {
@@ -52,7 +56,7 @@ pipeline {
                     // terminen y generen los XML; es el paso junit quien marca
                     // el build como UNSTABLE si hay fallos.
                     // RYUK_DISABLED + HOST_OVERRIDE: ver comentario del agente.
-                    sh 'TESTCONTAINERS_RYUK_DISABLED=true TESTCONTAINERS_HOST_OVERRIDE=127.0.0.1 mvn verify -Dmaven.test.failure.ignore=true'
+                    sh 'TESTCONTAINERS_RYUK_DISABLED=true TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal mvn verify -Dmaven.test.failure.ignore=true'
                 }
             }
             post {
