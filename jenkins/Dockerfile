@@ -29,4 +29,8 @@ RUN apt-get update && \
 RUN getent group docker || groupadd -g 983 docker; \
     usermod -aG docker jenkins
 
-USER jenkins
+# Proyecto Final: el permiso del socket se ajusta solo en cada arranque (ver
+# el script). El contenedor arranca como root solo para eso y Jenkins corre
+# como el usuario jenkins (el script baja privilegios con setpriv).
+COPY --chmod=755 docker-socket-entrypoint.sh /usr/local/bin/docker-socket-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/docker-socket-entrypoint.sh"]

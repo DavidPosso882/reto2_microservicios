@@ -121,7 +121,7 @@ services:
       database-departamentos:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8082/departamentos"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8082/health"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -145,6 +145,9 @@ services:
       SPRING_RABBITMQ_HOST: message-broker
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-admin}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD vacío, ejecuta bash scripts/setup-secrets.sh}
+      # Memoria: la JVM usa como máximo el 75 % del límite del contenedor.
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75
+    mem_limit: 640m
     secrets:
       - source: db_empleados_password
         target: DB_PASSWORD
@@ -156,7 +159,7 @@ services:
       message-broker:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8081/empleados"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/health"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -394,6 +397,13 @@ services:
       context: ./jenkins
       dockerfile: Dockerfile
     container_name: jenkins
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/login > /dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
     ports:
       - "9090:8080"     # Interfaz web
       - "50000:50000"   # Comunicación con agentes
@@ -405,7 +415,7 @@ services:
       - ./:/workspace:ro
       - /var/run/docker.sock:/var/run/docker.sock   # Acceso al Docker del host
     environment:
-      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false -Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true
+      - JAVA_OPTS=-Xmx512m -Djenkins.install.runSetupWizard=false -Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true
       - CASC_JENKINS_CONFIG=/var/jenkins_home/casc_configs
       - SONAR_TOKEN=${SONAR_TOKEN:-}   # Reto 7 P3: JCasC lo usa como credencial (ver casc.yaml)
     # Reto 7 P4: JCasC resuelve ${JWT_SECRET} leyendo /run/secrets/JWT_SECRET
@@ -422,10 +432,15 @@ services:
   sonarqube:
     image: sonarqube:lts-community
     container_name: sonarqube
+    mem_limit: 1800m
     ports:
       - "9000:9000"
     environment:
       - SONAR_JDBC_URL=jdbc:postgresql://sonar-db:5432/sonar
+      # Memoria: por defecto los 3 procesos Java suman ~2 GB; acotados ~1,3 GB.
+      - SONAR_SEARCH_JAVAOPTS=-Xms384m -Xmx384m
+      - SONAR_WEB_JAVAOPTS=-Xmx384m
+      - SONAR_CE_JAVAOPTS=-Xmx384m
       - SONAR_JDBC_USERNAME=sonar
       - SONAR_JDBC_PASSWORD=${SONAR_DB_PASSWORD:?SONAR_DB_PASSWORD vacío, ejecuta bash scripts/setup-secrets.sh}
     volumes:
@@ -495,6 +510,12 @@ services:
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health > /dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
     ports:
       - "3000:3000"   # http://localhost:3000
     environment:
@@ -558,7 +579,8 @@ services:
     environment:
       # Almacenamiento en memoria: suficiente para demo/CI y sin dependencias extra.
       STORAGE_TYPE: mem
-      JAVA_OPTS: -Xms128m -Xmx512m
+      JAVA_OPTS: -Xms128m -Xmx256m
+    mem_limit: 448m
     networks:
       - microservices-network
 

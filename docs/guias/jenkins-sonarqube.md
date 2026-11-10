@@ -14,16 +14,21 @@ docker compose up -d --build jenkins sonarqube sonar-db registry
 | SonarQube | http://localhost:9000 | `admin`; la contraseña de fábrica se cambia en el primer ingreso |
 | Registry | http://localhost:5000/v2/_catalog | sin autenticación |
 
-### Permiso del socket de Docker
+### Permiso del socket de Docker (automático)
 
 Jenkins construye imágenes y levanta el stack E2E con el Docker del host
-(socket montado). En Docker Desktop el socket pertenece a root; después de
-cada reinicio del contenedor hay que darle acceso al grupo `docker` (GID 983)
-de la imagen:
+(socket montado). En Docker Desktop el socket llega como `root:root`; el
+entrypoint de la imagen (`jenkins/docker-socket-entrypoint.sh`) lo entrega al
+grupo `docker` en cada arranque y luego ejecuta Jenkins como el usuario
+`jenkins`. No hay pasos manuales.
 
-```bash
-docker exec -u root jenkins sh -c "chgrp 983 /var/run/docker.sock && chmod 660 /var/run/docker.sock"
-```
+### Memoria
+
+Jenkins (`-Xmx512m`, límite 1 GB) y SonarQube (tres procesos Java acotados,
+límite 1,8 GB) tienen la memoria limitada en el compose para que el stack
+completo quepa en un equipo de 8 GB. El E2E de Jenkins levanta una segunda
+copia de la aplicación: en equipos con poca memoria, ejecutarlo con la
+observabilidad apagada.
 
 ## 2. Configuración como código
 
@@ -56,8 +61,7 @@ cada job.
 4. **Token para Jenkins**: avatar → *My Account* → *Security* → *Generate
    Tokens* (tipo *Global Analysis Token*) → copiar el valor en `.env` como
    `SONAR_TOKEN=...` (es la variable `SONAR_TOKEN`, no `SONAR_DB_PASSWORD`).
-5. Recrear Jenkins para que cargue el token:
-   `docker compose up -d jenkins` y reaplicar el permiso del socket.
+5. Recrear Jenkins para que cargue el token: `docker compose up -d jenkins`.
 
 ## 4. Etapas del pipeline
 
@@ -91,6 +95,6 @@ puertos.
 | Síntoma | Causa | Solución |
 |---|---|---|
 | `Not authorized. Please check the properties sonar.login` | token inválido (SonarQube recreado o token en otra variable) | generar token y ponerlo en `SONAR_TOKEN`; recrear Jenkins |
-| `permission denied ... docker.sock` | permiso del socket perdido tras reiniciar | comando de §1 |
+| `permission denied ... docker.sock` | la imagen de Jenkins es anterior al entrypoint automático | `docker compose up -d --build jenkins` |
 | E2E: puerto 18080 ocupado | quedó un stack E2E de un build cortado | `docker compose -p reto7-e2e down -v` |
 | Builds que se relanzan solos | abortar dispara `pollSCM` cada minuto | dejar terminar el build o desactivar el trigger temporalmente |
