@@ -2,6 +2,7 @@ import amqp from 'amqplib';
 import { randomUUID } from 'node:crypto';
 import { context, trace } from '@opentelemetry/api';
 import { logger } from './observability/logger.js';
+import { recordEventoPublicado } from './observability/metrics.js';
 import { extractContext, injectContext, tracer } from './observability/tracing.js';
 
 /**
@@ -204,6 +205,7 @@ export function crearPublicadorEventos(getChannel) {
       // Reto 8: propaga W3C traceparent/tracestate/baggage en AMQP.
       headers: injectContext({}),
     });
+    recordEventoPublicado(type);
     logger.info('event_published', { eventType: type, eventId: envelope.id });
   };
 }

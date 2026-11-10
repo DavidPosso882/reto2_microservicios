@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.empresa.gestionempleados.config.RabbitMQConfig;
 import com.rabbitmq.client.AMQP;
 import com.rabbitmq.client.Channel;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -54,6 +55,20 @@ class RabbitEventPublisherTest {
         assertEquals(data, envelope.get("data"));
         UUID id = UUID.fromString(envelope.get("id").toString());
         assertEquals(4, id.version(), "El id del envelope debe ser UUID v4");
+    }
+
+    @Test
+    @DisplayName("cuenta cada evento publicado en eventos_publicados_total por routing key")
+    void cuentaEventosPublicadosPorRoutingKey() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RabbitEventPublisher conMetricas = new RabbitEventPublisher(amqp, registry);
+
+        conMetricas.publicar("empleado.creado", Map.of("id", "E001"));
+        conMetricas.publicar("empleado.creado", Map.of("id", "E002"));
+        conMetricas.publicar("empleado.retirado", Map.of("id", "E001"));
+
+        assertEquals(2.0, registry.get("eventos_publicados").tag("routing_key", "empleado.creado").counter().count());
+        assertEquals(1.0, registry.get("eventos_publicados").tag("routing_key", "empleado.retirado").counter().count());
     }
 
     @Test

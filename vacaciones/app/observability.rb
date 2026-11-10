@@ -110,7 +110,13 @@ module Vacaciones
           docstring: 'Eventos publicados al message broker',
           labels: %i[routing_key]
         )
+        # Series en 0 desde el arranque: sin esto el primer evento de cada tipo
+        # crea la serie ya en 1 y increase() de Prometheus no lo cuenta.
+        EVENTOS_PUBLICADOS.each { |rk| @events_published.init_label_set(routing_key: rk) }
+        %w[iniciadas finalizadas].each { |t| @scheduler_transitions.init_label_set(type: t) }
       end
+
+      EVENTOS_PUBLICADOS = %w[vacaciones.programadas vacaciones.iniciadas vacaciones.finalizadas].freeze
 
       def record_request(method, route, code, duration_s)
         setup_metrics

@@ -6,6 +6,9 @@ import client from 'prom-client';
  */
 let cached = null;
 
+/** Eventos que publica auth-service (CATALOGO_EVENTOS.md). */
+const EVENTOS_AUTH = ['usuario.creado', 'usuario.recuperacion', 'cuenta.activada', 'cuenta.desactivada'];
+
 export function getMetrics(service) {
   if (cached) return cached;
 
@@ -28,8 +31,28 @@ export function getMetrics(service) {
     registers: [registry],
   });
 
-  cached = { registry, httpRequests, httpDuration };
+  // Proyecto Final — métrica de negocio: usuario.creado, cuenta.activada,
+  // cuenta.desactivada, usuario.recuperacion (mismo nombre que empleados y
+  // vacaciones para agregarlas en un solo panel de Grafana).
+  const eventosPublicados = new client.Counter({
+    name: 'eventos_publicados_total',
+    help: 'Eventos publicados al broker por routing key',
+    labelNames: ['routing_key'],
+    registers: [registry],
+  });
+  // Series en 0 desde el arranque: sin esto el primer evento de cada tipo
+  // crea la serie ya en 1 y increase() de Prometheus no lo cuenta.
+  for (const routingKey of EVENTOS_AUTH) {
+    eventosPublicados.inc({ routing_key: routingKey }, 0);
+  }
+
+  cached = { registry, httpRequests, httpDuration, eventosPublicados };
   return cached;
+}
+
+/** Cuenta un evento publicado (el registro ya existe o se crea con el nombre del servicio). */
+export function recordEventoPublicado(routingKey) {
+  getMetrics('auth-service').eventosPublicados.inc({ routing_key: routingKey });
 }
 
 /**

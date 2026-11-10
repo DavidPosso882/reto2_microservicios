@@ -73,6 +73,41 @@ except ImportError:  # pragma: no cover
     Instrumentator = None
     INSTRUMENTATOR_AVAILABLE = False
 
+# Proyecto Final — métrica de negocio: notificaciones enviadas por tipo
+# (BIENVENIDA, VACACIONES, CUENTA, SEGURIDAD, DESVINCULACION) y por evento
+# de origen. Se registra en el registro por defecto de prometheus_client,
+# que es el que publica /metrics.
+try:
+    from prometheus_client import Counter
+
+    NOTIFICACIONES_ENVIADAS = Counter(
+        "notificaciones_enviadas_total",
+        "Notificaciones enviadas por tipo y evento de origen",
+        ["tipo", "evento"],
+    )
+    # Series en 0 desde el arranque: sin esto la primera notificación de cada
+    # tipo crea la serie ya en 1 y increase() de Prometheus no la cuenta.
+    for _evento, _tipo in (
+        ("empleado.creado", "BIENVENIDA"),
+        ("empleado.retirado", "DESVINCULACION"),
+        ("vacaciones.programadas", "VACACIONES"),
+        ("vacaciones.iniciadas", "VACACIONES"),
+        ("vacaciones.finalizadas", "VACACIONES"),
+        ("usuario.creado", "SEGURIDAD"),
+        ("usuario.recuperacion", "SEGURIDAD"),
+        ("cuenta.activada", "CUENTA"),
+        ("cuenta.desactivada", "CUENTA"),
+    ):
+        NOTIFICACIONES_ENVIADAS.labels(tipo=_tipo, evento=_evento)
+except ImportError:  # pragma: no cover
+    NOTIFICACIONES_ENVIADAS = None
+
+
+def record_notificacion_enviada(tipo: str, evento: str) -> None:
+    """Cuenta una notificación enviada; no-op si prometheus_client no está."""
+    if NOTIFICACIONES_ENVIADAS is not None:
+        NOTIFICACIONES_ENVIADAS.labels(tipo=tipo or "?", evento=evento or "?").inc()
+
 _tracing_configured = False
 _logging_configured = False
 

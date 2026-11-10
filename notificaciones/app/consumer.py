@@ -27,7 +27,7 @@ from app.mensajes import (
     construir_notificacion,
     log_envio,
 )
-from app.observability import extracted_context, tracer
+from app.observability import extracted_context, record_notificacion_enviada, tracer
 
 logger = logging.getLogger("notificaciones.consumer")
 
@@ -97,6 +97,8 @@ def procesar_evento(session, envelope: dict) -> bool:
     session.add(EventoProcesado(id=evento_id))
     try:
         session.commit()
+        # Solo después del commit: un duplicado o un rollback no cuentan.
+        record_notificacion_enviada(notificacion.tipo, envelope.get("type"))
         logger.info(
             "Evento %s (type=%s) procesado y persistido.",
             evento_id,
