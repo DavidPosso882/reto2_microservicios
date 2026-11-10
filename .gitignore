@@ -5,6 +5,7 @@
 !README.md
 !**/README.md
 !evidencias/reto8/README-evidencias.md
+!docs/**/*.md
 
 # Variables de entorno y secretos (Proyecto Final: cero secretos en git)
 .env
