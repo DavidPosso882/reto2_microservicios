@@ -19,5 +19,8 @@ if [ -S "$SOCK" ]; then
     || echo ">>> AVISO: no se pudo ajustar el permiso de $SOCK"
 fi
 
+# setpriv no cambia el entorno: sin esto HOME queda en /root y git no lee
+# /var/jenkins_home/.gitconfig (safe.directory) → "dubious ownership".
+export HOME=/var/jenkins_home USER=jenkins
 exec setpriv --reuid=jenkins --regid=jenkins --init-groups \
   /usr/bin/tini -- /usr/local/bin/jenkins.sh "$@"
