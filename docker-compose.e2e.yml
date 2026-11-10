@@ -34,3 +34,30 @@ services:
     restart: on-failure:5
   vacaciones-service:
     restart: on-failure:5
+
+# Proyecto Final — secretos en CI. En el compose principal los secretos son
+# archivos de ./secrets/ (bind mounts). Aquí no sirven: Jenkins habla con el
+# Docker del host por el socket, y la ruta del workspace del contenedor Jenkins
+# no existe en el host. Con "environment:" Compose copia el valor dentro del
+# contenedor (en /run/secrets/<target>) sin montar nada. scripts/ci-compose.sh
+# genera valores aleatorios y efímeros para cada corrida (JWT_SECRET llega de
+# la credencial jwt-secret de Jenkins).
+secrets:
+  jwt_secret: !override
+    environment: JWT_SECRET
+  db_auth_password: !override
+    environment: DB_AUTH_PASSWORD
+  db_empleados_password: !override
+    environment: DB_EMPLEADOS_PASSWORD
+  db_departamentos_password: !override
+    environment: DB_DEPARTAMENTOS_PASSWORD
+  db_notificaciones_password: !override
+    environment: DB_NOTIFICACIONES_PASSWORD
+  db_perfiles_password: !override
+    environment: DB_PERFILES_PASSWORD
+  db_vacaciones_password: !override
+    environment: DB_VACACIONES_PASSWORD
+  grafana_admin_password: !override
+    environment: GRAFANA_ADMIN_PASSWORD
+  jenkins_admin_password: !override
+    environment: JENKINS_ADMIN_PASSWORD

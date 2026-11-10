@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 // Config holds all runtime configuration for perfiles-service.
@@ -28,6 +29,21 @@ func getenv(key, fallback string) string {
 	return fallback
 }
 
+// getsecret resolves a secret (Proyecto Final — cero secretos en el repo):
+// KEY_FILE (Docker secret mounted at /run/secrets) wins over KEY; with
+// neither it returns "" — never a hard-coded value. An unreadable file is
+// reported as "" too, so the DB connection fails loudly at startup.
+func getsecret(key string) string {
+	if path := strings.TrimSpace(os.Getenv(key + "_FILE")); path != "" {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(string(b))
+	}
+	return strings.TrimSpace(os.Getenv(key))
+}
+
 // Load reads configuration from the environment.
 //
 // RabbitMQ: RABBITMQ_URL wins when set; otherwise the URL is assembled
@@ -39,7 +55,7 @@ func Load() Config {
 		DBPort:     getenv("DB_PORT", "5432"),
 		DBName:     getenv("DB_NAME", "perfiles"),
 		DBUser:     getenv("DB_USER", "postgres"),
-		DBPassword: getenv("DB_PASSWORD", "postgres"),
+		DBPassword: getsecret("DB_PASSWORD"),
 
 		RabbitMQURL: rabbitMQURL(),
 	}

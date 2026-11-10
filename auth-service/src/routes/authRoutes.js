@@ -1,5 +1,6 @@
 import express from 'express';
 import { ValidationError } from '../errors.js';
+import { readSecret } from '../config/secrets.js';
 import { UsuarioService } from '../service/UsuarioService.js';
 
 /**
@@ -108,7 +109,7 @@ export function createAuthRouter({ service }) {
  * secret, so the endpoint also works in front of the gateway (tests, local).
  * A reset token (type: RESET_PASSWORD) never authenticates this route.
  */
-export async function extraerIdentidad(req, { jwtSecret = process.env.JWT_SECRET } = {}) {
+export async function extraerIdentidad(req, { jwtSecret = readSecret('JWT_SECRET') } = {}) {
   const hdrId = req.get('X-User-Id');
   const hdrRole = req.get('X-User-Role');
 

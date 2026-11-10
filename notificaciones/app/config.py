@@ -8,6 +8,19 @@ def _env(key: str, default: str) -> str:
     return os.environ.get(key, default)
 
 
+def _secret(key: str) -> str:
+    """Secret resolution (Proyecto Final — cero secretos en el repositorio).
+
+    ``KEY_FILE`` (Docker secret montado en /run/secrets) gana sobre ``KEY``;
+    sin ninguno de los dos devuelve "" (nunca un valor fijo en el código).
+    """
+    path = os.environ.get(f"{key}_FILE", "").strip()
+    if path:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read().strip()
+    return os.environ.get(key, "").strip()
+
+
 @dataclass(frozen=True)
 class Settings:
     # HTTP
@@ -18,7 +31,7 @@ class Settings:
     db_port: int = field(default_factory=lambda: int(_env("DB_PORT", "5432")))
     db_name: str = field(default_factory=lambda: _env("DB_NAME", "notificaciones"))
     db_user: str = field(default_factory=lambda: _env("DB_USER", "postgres"))
-    db_password: str = field(default_factory=lambda: _env("DB_PASSWORD", "postgres"))
+    db_password: str = field(default_factory=lambda: _secret("DB_PASSWORD"))
 
     # RabbitMQ (defaults match a local `rabbitmq:3-management` container with guest/guest)
     rabbitmq_host: str = field(default_factory=lambda: _env("RABBITMQ_HOST", "localhost"))

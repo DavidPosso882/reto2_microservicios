@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
 import { AppError, TokenInvalidoError } from './errors.js';
+import { readSecret } from './config/secrets.js';
 
 /**
  * Token issuing and verification (Reto 5 structures).
@@ -24,8 +25,9 @@ const BCRYPT_ROUNDS = Number(process.env.BCRYPT_ROUNDS || 10);
  * configure JWT_SECRET after import and before issuing/verifying.
  */
 function secret() {
-  const s = process.env.JWT_SECRET;
-  if (!s || String(s).trim() === '') {
+  // JWT_SECRET_FILE (Docker secret) o JWT_SECRET (tests / ejecución local).
+  const s = readSecret('JWT_SECRET');
+  if (s === '') {
     throw new AppError(500, 'La variable de entorno JWT_SECRET no está configurada');
   }
   return s;

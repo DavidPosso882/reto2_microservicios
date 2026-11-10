@@ -57,6 +57,9 @@ jobs:
 # Reto 7 P3 — Token de SonarQube como credencial Jenkins (el valor llega por
 # entorno SONAR_TOKEN desde .env, nunca queda en git) y servidor SonarQube
 # para el paso waitForQualityGate (resoluble desde el controller).
+# ${JWT_SECRET} no es variable de entorno: JCasC lo resuelve con su fuente de
+# secretos Docker, leyendo /run/secrets/JWT_SECRET (Docker secret jwt_secret
+# montado por docker-compose.yml; el archivo lo genera scripts/setup-secrets.sh).
 credentials:
   system:
     domainCredentials:

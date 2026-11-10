@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { readSecret } from '../config/secrets.js';
 
 /**
  * Edge authentication and authorization (Reto 5, Step 2).
@@ -32,8 +33,9 @@ const WRITE_METHODS = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
  * with a controlled 500 envelope instead of crashing or failing open.
  */
 export function jwtSecret() {
-  const secret = process.env.JWT_SECRET;
-  return secret && String(secret).trim() !== '' ? String(secret).trim() : null;
+  // JWT_SECRET_FILE (Docker secret) o JWT_SECRET (tests / ejecución local).
+  const secret = readSecret('JWT_SECRET');
+  return secret !== '' ? secret : null;
 }
 
 /**

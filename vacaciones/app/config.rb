@@ -14,13 +14,23 @@ module Vacaciones
       @db_port = (env.fetch('DB_PORT', '5432') || '5432').to_i
       @db_name = env.fetch('DB_NAME', 'vacaciones')
       @db_user = env.fetch('DB_USER', 'postgres')
-      @db_password = env.fetch('DB_PASSWORD', 'postgres')
+      @db_password = self.class.secret(env, 'DB_PASSWORD')
       @rabbitmq_host = env.fetch('RABBITMQ_HOST', 'localhost')
       @rabbitmq_port = (env.fetch('RABBITMQ_PORT', '5672') || '5672').to_i
       @rabbitmq_user = env.fetch('RABBITMQ_USER', 'guest')
       @rabbitmq_password = env.fetch('RABBITMQ_PASSWORD', 'guest')
       # Reto 5: frecuencia del scheduler del ciclo de vida (segundos, default 60).
       @scheduler_interval_s = [env.fetch('SCHEDULER_INTERVAL_S', '60').to_i, 1].max
+    end
+
+    # Proyecto Final — cero secretos: KEY_FILE (Docker secret montado en
+    # /run/secrets) gana sobre KEY; sin ninguno devuelve "" (nunca un valor
+    # fijo en el código).
+    def self.secret(env, key)
+      path = env.fetch("#{key}_FILE", '').to_s.strip
+      return File.read(path).strip unless path.empty?
+
+      env.fetch(key, '').to_s.strip
     end
   end
 end

@@ -4,7 +4,11 @@ services:
     environment:
       POSTGRES_DB: ${DB_AUTH_NAME:-auth_db}
       POSTGRES_USER: ${DB_AUTH_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_AUTH_PASSWORD:-postgres}
+      # Docker secret (secrets/db_auth_password): nunca en el compose.
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - source: db_auth_password
+        target: db_password
     volumes:
       - vol-auth:/var/lib/postgresql/data
     healthcheck:
@@ -26,13 +30,19 @@ services:
       DB_PORT: 5432
       DB_NAME: ${DB_AUTH_NAME:-auth_db}
       DB_USER: ${DB_AUTH_USER:-postgres}
-      DB_PASSWORD: ${DB_AUTH_PASSWORD:-postgres}
+      DB_PASSWORD_FILE: /run/secrets/db_password   # Docker secret
       # Firmado de JWT: el gateway valida con la MISMA clave (Reto 5).
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      # Docker secret (secrets/jwt_secret), nunca variable con valor.
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
       RABBITMQ_HOST: message-broker
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: ${RABBITMQ_USER:-admin}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD vacío, ejecuta bash scripts/setup-secrets.sh}
+    secrets:
+      - source: db_auth_password
+        target: db_password
+      - source: jwt_secret
+        target: jwt_secret
     depends_on:
       database-auth:
         condition: service_healthy
@@ -54,7 +64,11 @@ services:
     environment:
       POSTGRES_DB: ${DB_EMPLEADOS_NAME:-gestion_empleados}
       POSTGRES_USER: ${DB_EMPLEADOS_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_EMPLEADOS_PASSWORD:-postgres}
+      # Docker secret (secrets/db_empleados_password): nunca en el compose.
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - source: db_empleados_password
+        target: db_password
     volumes:
       - vol-empleados:/var/lib/postgresql/data
     healthcheck:
@@ -73,7 +87,11 @@ services:
     environment:
       POSTGRES_DB: ${DB_DEPARTAMENTOS_NAME:-departamentos}
       POSTGRES_USER: ${DB_DEPARTAMENTOS_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_DEPARTAMENTOS_PASSWORD:-postgres}
+      # Docker secret (secrets/db_departamentos_password): nunca en el compose.
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - source: db_departamentos_password
+        target: db_password
     volumes:
       - vol-departamentos:/var/lib/postgresql/data
     healthcheck:
@@ -95,7 +113,10 @@ services:
       DB_PORT: 5432
       DB_NAME: ${DB_DEPARTAMENTOS_NAME:-departamentos}
       DB_USER: ${DB_DEPARTAMENTOS_USER:-postgres}
-      DB_PASSWORD: ${DB_DEPARTAMENTOS_PASSWORD:-postgres}
+      DB_PASSWORD_FILE: /run/secrets/db_password   # Docker secret
+    secrets:
+      - source: db_departamentos_password
+        target: db_password
     depends_on:
       database-departamentos:
         condition: service_healthy
@@ -118,11 +139,15 @@ services:
       DB_PORT: 5432
       DB_NAME: ${DB_EMPLEADOS_NAME:-gestion_empleados}
       DB_USER: ${DB_EMPLEADOS_USER:-postgres}
-      DB_PASSWORD: ${DB_EMPLEADOS_PASSWORD:-postgres}
+      # DB_PASSWORD llega como Docker secret en /run/secrets/DB_PASSWORD
+      # (spring.config.import=configtree, ver application.properties).
       DEPARTAMENTOS_URL: http://departamentos-service:8082
       SPRING_RABBITMQ_HOST: message-broker
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-admin}
-      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD vacío, ejecuta bash scripts/setup-secrets.sh}
+    secrets:
+      - source: db_empleados_password
+        target: DB_PASSWORD
     depends_on:
       database-empleados:
         condition: service_healthy
@@ -144,7 +169,11 @@ services:
     environment:
       POSTGRES_DB: ${DB_NOTIFICACIONES_NAME:-notificaciones}
       POSTGRES_USER: ${DB_NOTIFICACIONES_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_NOTIFICACIONES_PASSWORD:-postgres}
+      # Docker secret (secrets/db_notificaciones_password): nunca en el compose.
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - source: db_notificaciones_password
+        target: db_password
     volumes:
       - vol-notificaciones:/var/lib/postgresql/data
     healthcheck:
@@ -166,11 +195,14 @@ services:
       DB_PORT: 5432
       DB_NAME: ${DB_NOTIFICACIONES_NAME:-notificaciones}
       DB_USER: ${DB_NOTIFICACIONES_USER:-postgres}
-      DB_PASSWORD: ${DB_NOTIFICACIONES_PASSWORD:-postgres}
+      DB_PASSWORD_FILE: /run/secrets/db_password   # Docker secret
       RABBITMQ_HOST: message-broker
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: ${RABBITMQ_USER:-admin}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD vacío, ejecuta bash scripts/setup-secrets.sh}
+    secrets:
+      - source: db_notificaciones_password
+        target: db_password
     depends_on:
       database-notificaciones:
         condition: service_healthy
@@ -192,7 +224,11 @@ services:
     environment:
       POSTGRES_DB: ${DB_PERFILES_NAME:-perfiles}
       POSTGRES_USER: ${DB_PERFILES_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PERFILES_PASSWORD:-postgres}
+      # Docker secret (secrets/db_perfiles_password): nunca en el compose.
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - source: db_perfiles_password
+        target: db_password
     volumes:
       - vol-perfiles:/var/lib/postgresql/data
     healthcheck:
@@ -214,11 +250,14 @@ services:
       DB_PORT: 5432
       DB_NAME: ${DB_PERFILES_NAME:-perfiles}
       DB_USER: ${DB_PERFILES_USER:-postgres}
-      DB_PASSWORD: ${DB_PERFILES_PASSWORD:-postgres}
+      DB_PASSWORD_FILE: /run/secrets/db_password   # Docker secret
       RABBITMQ_HOST: message-broker
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: ${RABBITMQ_USER:-admin}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD vacío, ejecuta bash scripts/setup-secrets.sh}
+    secrets:
+      - source: db_perfiles_password
+        target: db_password
     depends_on:
       database-perfiles:
         condition: service_healthy
@@ -240,7 +279,11 @@ services:
     environment:
       POSTGRES_DB: ${DB_VACACIONES_NAME:-vacaciones}
       POSTGRES_USER: ${DB_VACACIONES_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_VACACIONES_PASSWORD:-postgres}
+      # Docker secret (secrets/db_vacaciones_password): nunca en el compose.
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - source: db_vacaciones_password
+        target: db_password
     volumes:
       - vol-vacaciones:/var/lib/postgresql/data
     healthcheck:
@@ -262,11 +305,14 @@ services:
       DB_PORT: 5432
       DB_NAME: ${DB_VACACIONES_NAME:-vacaciones}
       DB_USER: ${DB_VACACIONES_USER:-postgres}
-      DB_PASSWORD: ${DB_VACACIONES_PASSWORD:-postgres}
+      DB_PASSWORD_FILE: /run/secrets/db_password   # Docker secret
       RABBITMQ_HOST: message-broker
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: ${RABBITMQ_USER:-admin}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD vacío, ejecuta bash scripts/setup-secrets.sh}
+    secrets:
+      - source: db_vacaciones_password
+        target: db_password
     depends_on:
       database-vacaciones:
         condition: service_healthy
@@ -289,7 +335,7 @@ services:
       - "15672:15672"   # Management UI: http://localhost:15672
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD vacío, ejecuta bash scripts/setup-secrets.sh}
     volumes:
       - vol-rabbitmq:/var/lib/rabbitmq
     healthcheck:
@@ -310,13 +356,16 @@ services:
       - "8080:8080"   # ← el ÚNICO puerto publicado al host
     environment:
       PORT: 8080
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      JWT_SECRET_FILE: /run/secrets/jwt_secret   # Docker secret
       EMPLEADOS_URL: http://empleados-service:8081
       DEPARTAMENTOS_URL: http://departamentos-service:8082
       PERFILES_URL: http://perfiles-service:8083
       NOTIFICACIONES_URL: http://notificaciones-service:8084
       VACACIONES_URL: http://vacaciones-service:8085
       AUTH_URL: http://auth-service:8086
+    secrets:
+      - source: jwt_secret
+        target: jwt_secret
     depends_on:
       empleados-service:
         condition: service_started
@@ -354,15 +403,18 @@ services:
       - ./jenkins/casc.yaml:/var/jenkins_home/casc_configs/jobs.yaml:ro
       # Repo como SCM local (P2, Opción A): los jobs clonan file:///workspace.
       - ./:/workspace:ro
-      # El worktree resuelve sus objetos en el .git principal del host;
-      # montarlo en la misma ruta absoluta hace que el clone file:// funcione.
-      - /home/david/Documentos/Semestre9/reto2/.git:/home/david/Documentos/Semestre9/reto2/.git:ro
       - /var/run/docker.sock:/var/run/docker.sock   # Acceso al Docker del host
     environment:
       - JAVA_OPTS=-Djenkins.install.runSetupWizard=false -Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true
       - CASC_JENKINS_CONFIG=/var/jenkins_home/casc_configs
       - SONAR_TOKEN=${SONAR_TOKEN:-}   # Reto 7 P3: JCasC lo usa como credencial (ver casc.yaml)
-      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}   # Reto 7 P4: JCasC lo usa como credencial jwt-secret
+    # Reto 7 P4: JCasC resuelve ${JWT_SECRET} leyendo /run/secrets/JWT_SECRET
+    # (fuente de secretos Docker integrada en configuration-as-code) y lo
+    # registra como la credencial jwt-secret de los stacks E2E.
+    secrets:
+      - source: jwt_secret
+        target: JWT_SECRET
+      - jenkins_admin_password   # init.groovy.d/create-admin.groovy
     networks:
       - microservices-network
 
@@ -375,7 +427,7 @@ services:
     environment:
       - SONAR_JDBC_URL=jdbc:postgresql://sonar-db:5432/sonar
       - SONAR_JDBC_USERNAME=sonar
-      - SONAR_JDBC_PASSWORD=sonar
+      - SONAR_JDBC_PASSWORD=${SONAR_DB_PASSWORD:?SONAR_DB_PASSWORD vacío, ejecuta bash scripts/setup-secrets.sh}
     volumes:
       - sonarqube_data:/opt/sonarqube/data
       - sonarqube_logs:/opt/sonarqube/logs
@@ -391,7 +443,7 @@ services:
     environment:
       - POSTGRES_DB=sonar
       - POSTGRES_USER=sonar
-      - POSTGRES_PASSWORD=sonar
+      - POSTGRES_PASSWORD=${SONAR_DB_PASSWORD:?SONAR_DB_PASSWORD vacío, ejecuta bash scripts/setup-secrets.sh}
     volumes:
       - sonar_db_data:/var/lib/postgresql/data
     networks:
@@ -447,7 +499,7 @@ services:
       - "3000:3000"   # http://localhost:3000
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password   # Docker secret
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
@@ -459,6 +511,8 @@ services:
       - grafana-data:/var/lib/grafana                                    # persistencia
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro # datasources + dashboards
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro  # JSON de T3
+    secrets:
+      - grafana_admin_password
     depends_on:
       - prometheus
       - loki
@@ -507,6 +561,32 @@ services:
       JAVA_OPTS: -Xms128m -Xmx512m
     networks:
       - microservices-network
+
+# ── Secretos (Proyecto Final: cero secretos en el repositorio) ──
+# Los archivos de secrets/ los genera `bash scripts/setup-secrets.sh` (están
+# en .gitignore; las plantillas viven en secrets.example/). Compose los monta
+# de solo lectura en /run/secrets/<target> de cada contenedor que los declara.
+# En CI, docker-compose.e2e.yml los sustituye por variables de entorno
+# efímeras que genera scripts/ci-compose.sh.
+secrets:
+  jwt_secret:
+    file: ./secrets/jwt_secret
+  db_auth_password:
+    file: ./secrets/db_auth_password
+  db_empleados_password:
+    file: ./secrets/db_empleados_password
+  db_departamentos_password:
+    file: ./secrets/db_departamentos_password
+  db_notificaciones_password:
+    file: ./secrets/db_notificaciones_password
+  db_perfiles_password:
+    file: ./secrets/db_perfiles_password
+  db_vacaciones_password:
+    file: ./secrets/db_vacaciones_password
+  grafana_admin_password:
+    file: ./secrets/grafana_admin_password
+  jenkins_admin_password:
+    file: ./secrets/jenkins_admin_password
 
 networks:
   microservices-network:
