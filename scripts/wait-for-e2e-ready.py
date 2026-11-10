@@ -14,6 +14,7 @@ Uso: BASE_URL=http://localhost:8080 python3 scripts/wait-for-e2e-ready.py
 """
 import json
 import os
+import secrets
 import sys
 import time
 import urllib.request
@@ -29,7 +30,30 @@ SETTLE_S = int(os.environ.get("E2E_SETTLE_S", "20"))
 SERVICES = ["empleados", "departamentos", "perfiles", "notificaciones", "vacaciones"]
 NOT_READY = {502, 503, 504}
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@empresa.com")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Admin123!")
+
+# Proyecto Final — cero secretos: sin contraseña fija en el código.
+# Con ADMIN_PASSWORD exportada se usa esa (stack local con su admin ya creado).
+# Sin ella (CI: stack desechable y vacío) se genera una aleatoria que cumple la
+# política de auth-service y se deja en ADMIN_PASSWORD_FILE para que
+# e2e-tests/run_bdd.sh inicie sesión con la misma. El archivo está en
+# .gitignore y el valor nunca se imprime.
+ADMIN_PASSWORD_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "e2e-tests", ".e2e-admin-password"
+)
+
+
+def resolve_admin_password() -> str:
+    explicit = os.environ.get("ADMIN_PASSWORD", "").strip()
+    if explicit:
+        return explicit
+    generated = "E2e" + secrets.token_hex(16)  # mayúscula + minúsculas + dígitos
+    with open(ADMIN_PASSWORD_FILE, "w", encoding="utf-8") as fh:
+        fh.write(generated)
+    print("wait-for-e2e-ready: ADMIN_PASSWORD no definida; se generó una efímera para este stack")
+    return generated
+
+
+ADMIN_PASSWORD = resolve_admin_password()
 
 
 def get(path: str):

@@ -15,9 +15,9 @@ USER_EMAIL / USER_PASSWORD
     Credenciales del rol USER para el login de Antecedentes (Background).
 E2E_USER_PASSWORD
     Password con el que el flujo E2E activa la cuenta USER sintética del
-    Punto 3 (alta + reset). Default: ``User1234``. No es un secreto: la
-    cuenta la crea la propia corrida y se desactiva (= se retira) en el
-    escenario ADMIN.
+    Punto 3 (alta + reset). Sin default fijo: si no se define, se genera una
+    aleatoria por corrida (cumple la política de auth-service). La cuenta la
+    crea la propia corrida y se desactiva (= se retira) en el escenario ADMIN.
 HTTP_TIMEOUT
     Timeout HTTP en segundos. Default: ``10``.
 E2E_P5_SENUELOS
@@ -45,13 +45,18 @@ E2E_P5_VENTANA_NEGATIVA_S
 from __future__ import annotations
 
 import os
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Tuple
 
 DEFAULT_BASE_URL = "http://localhost:8080"
 DEFAULT_SMOKE_PATH = "/health"
 DEFAULT_HTTP_TIMEOUT = "10"
-DEFAULT_E2E_USER_PASSWORD = "User1234"
+# Proyecto Final — cero secretos: sin contraseña fija. Se genera una vez por
+# proceso (behave corre la suite en uno solo) para que alta, reset y login de
+# la misma corrida usen el mismo valor. "E2e" garantiza mayúscula, minúscula y
+# dígito (política de auth-service: >= 8 caracteres).
+_RUN_E2E_USER_PASSWORD = "E2e" + secrets.token_hex(12)
 DEFAULT_P5_SENUELOS = "8"
 DEFAULT_P5_LOGIN_INTERVAL_MS = "100"
 DEFAULT_P5_SCHEDULER_TIMEOUT_S = "75"
@@ -93,10 +98,10 @@ def http_timeout() -> float:
 def user_activation_password() -> str:
     """Password de la cuenta USER sintética que activa el flujo del Punto 3.
 
-    Se puede sobrescribir con ``E2E_USER_PASSWORD``; el default documenta el
-    valor usado por los escenarios, pero no es una credencial de producción.
+    Se puede fijar con ``E2E_USER_PASSWORD``; si no, se usa la aleatoria de
+    esta corrida (nunca un valor escrito en el repositorio).
     """
-    return os.environ.get("E2E_USER_PASSWORD", DEFAULT_E2E_USER_PASSWORD)
+    return os.environ.get("E2E_USER_PASSWORD") or _RUN_E2E_USER_PASSWORD
 
 
 def p5_senuelos() -> int:

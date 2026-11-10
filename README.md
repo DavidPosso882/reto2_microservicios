@@ -128,20 +128,22 @@ Las 5 rutas de negocio del Reto 3 se enrutan igual; solo pasan de públicas a pr
 
 | Variable | Dónde | Nota |
 |---|---|---|
-| `JWT_SECRET` | auth-service **y** api-gateway (misma clave) | obligatoria y fail-fast: si falta, compose aborta; generar con `openssl rand -hex 32` en `.env` |
+| `JWT_SECRET` | auth-service **y** api-gateway (misma clave) | Docker secret `secrets/jwt_secret` (lo genera `scripts/setup-secrets.sh`); nunca en `.env` ni en git |
 | `AUTH_URL` | api-gateway | `http://auth-service:8086` |
 | `SCHEDULER_INTERVAL_S` | vacaciones-service | segundos entre corridas del scheduler (default `60` = 1 minuto) |
 
 ## 4. Cómo obtener un token
 
 ```bash
+# ADMIN_PASSWORD: la eliges tú (≥ 8 caracteres, mayúscula, minúscula y número)
+# y nunca se escribe en el repositorio. Ej.: read -s ADMIN_PASSWORD; export ADMIN_PASSWORD
 # una sola vez: crea el primer ADMIN
 curl -X POST http://localhost:8080/auth/bootstrap -H 'Content-Type: application/json' \
-  -d '{"email":"admin@empresa.com","password":"Admin123!"}'
+  -d "{\"email\":\"admin@empresa.com\",\"password\":\"$ADMIN_PASSWORD\"}"
 
 # login (emitir/renovar JWT)
 ADMIN_TOKEN=$(curl -s -X POST http://localhost:8080/auth/login -H 'Content-Type: application/json' \
-  -d '{"email":"admin@empresa.com","password":"Admin123!"}' | jq -r .token)
+  -d "{\"email\":\"admin@empresa.com\",\"password\":\"$ADMIN_PASSWORD\"}" | jq -r .token)
 
 # usar el token en negocios
 curl http://localhost:8080/empleados -H "Authorization: Bearer $ADMIN_TOKEN"
@@ -1159,7 +1161,7 @@ un span de Zipkin (el datasource Zipkin está configurado con `tracesToLogsV2`).
 # 0) Token y tráfico base (para que los paneles tengan series)
 ADMIN_TOKEN=$(curl -s -X POST http://localhost:8080/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@empresa.com","password":"Admin123!"}' | jq -r .token)
+  -d "{\"email\":\"admin@empresa.com\",\"password\":\"$ADMIN_PASSWORD\"}" | jq -r .token)
 
 for i in $(seq 1 30); do
   curl -s -o /dev/null -w "%{http_code} " http://localhost:8080/empleados \

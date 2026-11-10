@@ -22,14 +22,22 @@ set -uo pipefail
 
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-if [[ -z "${ADMIN_EMAIL:-}" || -z "${ADMIN_PASSWORD:-}" ]]; then
-    echo "run_bdd.sh: usando credenciales ADMIN de demo del bootstrap (README raíz §4);" \
-         "exporta ADMIN_EMAIL/ADMIN_PASSWORD para apuntar a otro stack." >&2
+# Proyecto Final — cero secretos: ninguna contraseña fija aquí.
+# ADMIN_PASSWORD exportada gana; si no, se usa la efímera que dejó
+# scripts/wait-for-e2e-ready.py al hacer el bootstrap (CI) en .e2e-admin-password.
+if [[ -z "${ADMIN_PASSWORD:-}" && -s .e2e-admin-password ]]; then
+    ADMIN_PASSWORD="$(cat .e2e-admin-password)"
+    echo "run_bdd.sh: usando la contraseña ADMIN efímera de wait-for-e2e-ready.py" >&2
+fi
+if [[ -z "${ADMIN_PASSWORD:-}" ]]; then
+    echo "run_bdd.sh: falta ADMIN_PASSWORD. Exporta la contraseña del ADMIN de tu stack" \
+         "(la que usaste en POST /auth/bootstrap) o corre antes scripts/wait-for-e2e-ready.py." >&2
+    exit 2
 fi
 
 export BASE_URL="${BASE_URL:-http://localhost:8080}"
 export ADMIN_EMAIL="${ADMIN_EMAIL:-admin@empresa.com}"
-export ADMIN_PASSWORD="${ADMIN_PASSWORD:-Admin123!}"
+export ADMIN_PASSWORD
 
 if [[ ! -x .venv/bin/behave ]]; then
     echo "run_bdd.sh: falta el venv local. Crearlo con:" >&2

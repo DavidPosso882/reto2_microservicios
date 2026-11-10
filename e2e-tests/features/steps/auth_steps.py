@@ -53,7 +53,7 @@ Credenciales (nunca en los ``.feature``)
 * ``ADMIN_EMAIL`` / ``ADMIN_PASSWORD`` para el rol ``"admin"``.
 * ``USER_EMAIL`` / ``USER_PASSWORD`` para el rol ``"user"`` (cuentas ya
   existentes en el entorno).
-* ``E2E_USER_PASSWORD`` (default ``User1234``) para las cuentas sintéticas
+* ``E2E_USER_PASSWORD`` (aleatoria por corrida si no se define) para las cuentas sintéticas
   que activan los puntos 3 y 5.
 
 Si faltan, el escenario falla con un mensaje que indica la variable esperada.

@@ -89,12 +89,13 @@ curl http://localhost:8080/health   # → 200 {"status":"ok","service":"api-gate
 # stack nuevo: bootstrapear el ADMIN (README raíz § "Cómo obtener un token")
 ```
 
-b) **Entorno** (opcional; el wrapper ya trae defaults):
+b) **Entorno** (`ADMIN_PASSWORD` es obligatoria fuera de CI; el resto trae defaults):
 
 ```bash
 export BASE_URL=http://localhost:8080    # default del wrapper
 export ADMIN_EMAIL=admin@empresa.com     # default demo del bootstrap
-export ADMIN_PASSWORD=Admin123!          # default demo; en Jenkins se inyectan las reales
+export ADMIN_PASSWORD=...               # la del ADMIN de tu stack (sin default en el repo);
+                                        # en Jenkins se genera una efímera por build
 ```
 
 c) **Comandos** (la primera vez hay que crear el venv):
@@ -135,9 +136,9 @@ documentadas en el README raíz (se sobreescriben con `ADMIN_EMAIL` /
 |---|---|---|
 | `BASE_URL` | `http://localhost:8080` | URL del gateway |
 | `SMOKE_PATH` | `/health` | Endpoint público del humo |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | demo del bootstrap si no se definen (solo `run_bdd.sh`) | Login `"admin"` en Antecedentes |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | `ADMIN_EMAIL`: `admin@empresa.com`; `ADMIN_PASSWORD`: sin default (o la efímera de `wait-for-e2e-ready.py`) | Login `"admin"` en Antecedentes |
 | `USER_EMAIL` / `USER_PASSWORD` | (sin default) | Login `"user"` en Antecedentes (cuentas ya existentes) |
-| `E2E_USER_PASSWORD` | `User1234` | Password de las cuentas USER sintéticas del P3 y del P5 (no es secreto) |
+| `E2E_USER_PASSWORD` | aleatoria por corrida | Password de las cuentas USER sintéticas del P3 y del P5 |
 | `E2E_P5_SENUELOS` | `8` | Cuentas satélite que el ciclo del P5 programa en el mismo tick para ampliar la ventana de suspensión observable |
 | `E2E_P5_LOGIN_INTERVAL_MS` | `100` | Intervalo de reintento del polling de login del P5 (ciclo y offboarding) |
 | `E2E_P5_SCHEDULER_TIMEOUT_S` | `75` | Presupuesto máximo de espera del tick del scheduler (cubre el intervalo de 60 s + procesamiento) |
@@ -280,7 +281,7 @@ activo` reproduce el flujo real del Reto 5:
    `GET /notificaciones/{id}` y se extrae de su mensaje el token de
    activación.
 4. `POST /auth/reset-password` activa la cuenta con `E2E_USER_PASSWORD`
-   (default `User1234`, no es un secreto real).
+   (si no se define, una aleatoria generada para la corrida).
 5. `POST /auth/login` devuelve el access token USER real, que se usa como
    Bearer en el resto del escenario.
 

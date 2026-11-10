@@ -1,0 +1,5 @@
+# Scripts de shell siempre con LF: se ejecutan dentro de contenedores Linux
+# (Jenkins, agentes Docker) donde un CRLF rompe el intérprete (/bin/sh^M).
+*.sh        text eol=lf
+Jenkinsfile text eol=lf
+*.groovy    text eol=lf
